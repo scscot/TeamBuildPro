@@ -1,0 +1,45 @@
+name: ultimatefix
+description: TeamBuild Clean Rebuild (Dart-only with SDK)
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.3.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  http: ^1.2.1
+  intl: ^0.20.2
+  path: ^1.8.3
+  firebase_auth_rest: ^2.1.1
+  flutter_dotenv: ^5.0.2
+  cloud_firestore: ^5.6.7
+  shared_preferences: ^2.2.2
+  google_sign_in: ^6.1.5
+  sign_in_with_apple: ^4.3.0
+  local_auth: ^2.1.7
+  image_picker: ^1.0.7
+  firebase_storage: ^12.4.5
+  firebase_auth: ^5.5.3
+  uuid: ^4.0.0
+  share_plus: ^7.2.1
+  url_launcher: ^6.2.5
+  dropdown_search: ^6.0.2
+  multi_select_flutter: ^4.1.3
+  firebase_core: ^3.13.1
+  in_app_purchase: ^3.2.3
+  cloud_functions: ^5.5.1
+  firebase_messaging: ^15.2.6
+
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/env.prod

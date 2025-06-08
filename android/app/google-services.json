@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "312163687148",
+    "project_id": "teambuilder-plus-fe74d",
+    "storage_bucket": "teambuilder-plus-fe74d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:312163687148:android:e3df886cab95a1123763c9",
+        "android_client_info": {
+          "package_name": "com.example.tbp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "312163687148-o7n9d5o2lvdlncbknrgc6ghgkuklld9a.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAnB0-mdcWTqW0Ae4117hykVCT_zKXr1HU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "312163687148-o7n9d5o2lvdlncbknrgc6ghgkuklld9a.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "312163687148-1di7hi57husi4s9pcn74hd2ndo2d59ss.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.scott.teambuildApp"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

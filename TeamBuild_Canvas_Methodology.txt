@@ -1,0 +1,78 @@
+TeamBuild+ Canvas Methodology
+Version: 2025-05-17 18:53:15
+
+==========================
+✅ VERIFIED CANVAS GENERATION PROTOCOL (V-CGP)
+==========================
+
+1. One canvas is created per `.dart` file directly from DartFiles.zip.
+2. No templates, inferred logic, or hallucinated content — raw file insertion only.
+3. Each canvas is line-by-line validated against its source.
+4. Canonical integrity (line count, imports, structure) is enforced.
+5. Hashes are generated and logged for fidelity verification.
+
+==========================
+🛡️ CANONICAL SOURCE LOCK ENFORCEMENT (CSLE)
+==========================
+
+1. Pre-Patch Canonical Verification:
+   - Confirm canvas matches the DartFiles.zip file before any patch.
+   - No patching is allowed if the canvas has drifted from source.
+
+2. One-Way Source Authority:
+   - DartFiles.zip is the only trusted source at canvas creation time.
+   - After first patch, canvas becomes the new trust base.
+
+3. Patch Scope Gate:
+   - Only scoped PATCH START/END regions may be used unless full replacement is explicitly authorized.
+
+4. Line Count Parity Check:
+   - If line count differs by more than ±3 lines from baseline, flag for manual review.
+
+5. Diff Snapshot Transparency:
+   - All core canvases must support side-by-side diff audits on request.
+
+🔄 Post-First Patch Logic:
+   - Canvas drift is allowed only after first trusted patch.
+   - All future patches are scoped against the current live canvas.
+
+==========================
+⚙️ OPTIMIZATION PROTOCOL (To Reduce Patch Frequency)
+==========================
+
+1. Context-Aware Patching:
+   - When patching one canvas, anticipate and apply dependent changes in related canvases (e.g. model ↔ screen).
+
+2. Dependency Audit System:
+   - Maintain a lightweight map of model ↔ service ↔ screen dependencies to detect patch chains.
+
+3. Integrated Patch Batching:
+   - If one patch affects multiple canvases, deliver them together in a sequenced bundle.
+
+4. Session Snapshot & Rewind Support:
+   - Before large changes, take a snapshot of the full canvas state to enable rollback.
+
+5. Null Safety & Build Safety Scan:
+   - Pre-patch validation for nullability risks and build-breaking edits.
+
+==========================
+🔐 ENHANCED CANVAS FIDELITY CONTROLS
+==========================
+
+1. File-to-Canvas Hash Check:
+   - Generate SHA-256 hash of each `.dart` file.
+   - Compare before any patch or audit.
+
+2. Canonical Snapshot Log:
+   - Log per canvas: filename, line count, creation timestamp, hash.
+
+3. Pre-Patch Structural Snapshot:
+   - Save canvas state before patch.
+   - Allow automatic reversion if patch fails validation.
+
+4. Visual Diff Auto-Generation (Optional):
+   - On command, display source-vs-canvas side-by-side for approval before patching.
+
+==========================
+End of Methodology
+==========================

@@ -1,0 +1,19 @@
+#include "Generated.xcconfig"
+// Release.xcconfig – Key iOS Build Settings Snapshot
+
+PRODUCT_BUNDLE_IDENTIFIER = com.scott.ultimatefix
+DEVELOPMENT_TEAM = YXV25WMDS8
+CODE_SIGN_IDENTITY = Apple Development
+PROVISIONING_PROFILE_SPECIFIER = 
+IPHONEOS_DEPLOYMENT_TARGET = 13.0
+SDKROOT = iphoneos
+ARCHS = arm64
+SWIFT_VERSION = 5.0
+ENABLE_BITCODE = NO
+
+// Optional but useful
+DEBUG_INFORMATION_FORMAT = dwarf-with-dsym
+VALID_ARCHS = arm64
+ONLY_ACTIVE_ARCH = NO
+
+#include "Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
