@@ -1,8 +1,17 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:tbp/services/eligibility_service.dart';
+import 'package:flutter/foundation.dart' show kDebugMode; // Import kDebugMode
+import 'dart:developer' as developer; // Import the developer package for logging
+import '../services/eligibility_service.dart';
 
 class InvitationService {
   static final _firestore = FirebaseFirestore.instance;
+
+  // A simple log function that only prints in debug mode
+  static void _log(String message) {
+    if (kDebugMode) {
+      developer.log(message, name: 'InvitationService');
+    }
+  }
 
   /// Sends an invitation if the user is eligible and hasn't been invited yet.
   static Future<void> sendInvitationIfEligible(String userId) async {
@@ -10,13 +19,13 @@ class InvitationService {
       // 1. Get user data
       final userDoc = await _firestore.collection('users').doc(userId).get();
       if (!userDoc.exists) {
-        print('❌ User not found: $userId');
+        _log('❌ User not found: $userId');
         return;
       }
 
       final userData = userDoc.data();
       if (userData == null || !userData.containsKey('upline_admin')) {
-        print('❌ User has no upline_admin: $userId');
+        _log('❌ User has no upline_admin: $userId');
         return;
       }
 
@@ -26,7 +35,7 @@ class InvitationService {
       final isEligible =
           await EligibilityService.isUserEligible(userId, uplineAdmin);
       if (!isEligible) {
-        print('⚠️ User not eligible yet: $userId');
+        _log('⚠️ User not eligible yet: $userId');
         return;
       }
 
@@ -34,7 +43,7 @@ class InvitationService {
       final inviteDoc =
           await _firestore.collection('invitations').doc(userId).get();
       if (inviteDoc.exists) {
-        print('📨 Invitation already sent to user: $userId');
+        _log('📨 Invitation already sent to user: $userId');
         return;
       }
 
@@ -46,9 +55,9 @@ class InvitationService {
         'status': 'pending',
       });
 
-      print('✅ Invitation sent to user: $userId');
+      _log('✅ Invitation sent to user: $userId');
     } catch (e) {
-      print('❌ Error sending invitation: $e');
+      _log('❌ Error sending invitation: $e');
     }
   }
 }
