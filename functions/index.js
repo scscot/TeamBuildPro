@@ -251,16 +251,25 @@ exports.sendPushNotification = onDocumentCreated("users/{userId}/notifications/{
   const snap = event.data; // Data snapshot
   const userId = event.params.userId; // Path parameters from event
 
-  // No need to check snap?.data() first, it's always available for onDocumentCreated
+  console.log(`📩 New notification created for userId: ${userId}`);
+
   const notificationData = snap.data();
+  console.log(`📨 Notification contents: ${JSON.stringify(notificationData)}`);
 
-  const userDoc = await db.collection("users").doc(userId).get();
-  // Use optional chaining for safer access
+  const userDocRef = db.collection("users").doc(userId);
+  const userDoc = await userDocRef.get();
+
+  if (!userDoc.exists) {
+    console.error(`❌ User document for ${userId} does not exist in Firestore.`);
+    return null;
+  }
+
   const fcmToken = userDoc.data()?.fcm_token;
+  console.log(`📲 Retrieved FCM token for user ${userId}: ${fcmToken || '[EMPTY OR NULL]'}`);
 
-  if (!fcmToken) {
-    console.log(`❌ No FCM token for user ${userId}. Notification will not be sent.`);
-    return null; // Return null if no token to avoid unnecessary processing
+  if (!fcmToken || typeof fcmToken !== 'string' || fcmToken.trim().length < 10) {
+    console.log(`❌ Invalid or missing FCM token for user ${userId}. Skipping push.`);
+    return null;
   }
 
   const message = {
@@ -269,19 +278,32 @@ exports.sendPushNotification = onDocumentCreated("users/{userId}/notifications/{
       title: notificationData?.title || "New Alert",
       body: notificationData?.message || "You have a new notification in TeamBuild Pro",
     },
-    // Consolidate platform-specific sound settings if they are identical
-    android: { notification: { sound: "default" } },
-    apns: { payload: { aps: { sound: "default" } } },
+    android: {
+      notification: {
+        sound: "default",
+      },
+    },
+    apns: {
+      payload: {
+        aps: {
+          sound: "default",
+        },
+      },
+    },
   };
+
+  console.log(`📦 Prepared FCM message payload: ${JSON.stringify(message, null, 2)}`);
 
   try {
     const response = await messaging.send(message);
     console.log(`✅ FCM push sent to user ${userId}: ${response}`);
   } catch (error) {
     console.error(`❌ Failed to send FCM push to user ${userId}:`, error);
-    // Consider handling specific FCM errors (e.g., token invalid)
   }
+
+  return null;
 });
+
 
 // ---
 // ## Helper Function

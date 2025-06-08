@@ -51,6 +51,8 @@ secrets/ # Directory for secrets, should almost always be ignored.
 # settings, launch configurations, and tasks. It's often good for team projects.
 #.vscode/
 
+functions/
+
 # === Flutter / Dart / Pub Specific Ignores ===
 # Flutter build output directory
 build/

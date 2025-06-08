@@ -9,8 +9,8 @@ import 'services/session_manager.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
-  debugPrint('✅ Firebase App Config Loaded: \${options.projectId}');
-  await _initializeFCM(); // ✅ Initialize FCM
+  debugPrint('✅ Firebase initialized successfully.');
+  await _initializeFCM();
   runApp(const MyApp());
 }
 
@@ -24,8 +24,12 @@ Future<void> _initializeFCM() async {
     sound: true,
   );
 
+  debugPrint('🔐 Notification permission status: ${settings.authorizationStatus}');
+
   if (settings.authorizationStatus == AuthorizationStatus.authorized) {
     final token = await messaging.getToken();
+    debugPrint('📲 Current FCM Token: $token');
+
     if (token != null) {
       final user = await SessionManager().getCurrentUser();
       if (user != null) {
@@ -33,11 +37,13 @@ Future<void> _initializeFCM() async {
             .collection('users')
             .doc(user.uid)
             .update({'fcm_token': token});
+        debugPrint('✅ FCM token uploaded to Firestore for user: ${user.uid}');
       }
     }
 
-    // Listen for token refresh
+    // Handle token refresh
     messaging.onTokenRefresh.listen((newToken) async {
+      debugPrint('🔄 FCM token refreshed: $newToken');
       final user = await SessionManager().getCurrentUser();
       if (user != null) {
         await FirebaseFirestore.instance
@@ -46,12 +52,14 @@ Future<void> _initializeFCM() async {
             .update({'fcm_token': newToken});
       }
     });
+  } else {
+    debugPrint('⚠️ Notification permissions not granted.');
   }
 
-  // Optional foreground message listener
+  // Optional: Foreground listener
   FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-    debugPrint('📩 FCM Message Received: \${message.notification?.title}');
-    // Add local UI update/alert logic here if needed
+    debugPrint('📩 Foreground FCM Message Received: ${message.notification?.title}');
+    // Add local UI/alert logic here if needed
   });
 }
 

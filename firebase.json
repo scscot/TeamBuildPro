@@ -1,1 +1,43 @@
-{"flutter":{"platforms":{"ios":{"buildConfigurations":{"Debug":{"projectId":"teambuilder-plus-fe74d","appId":"1:312163687148:ios:9db93e08c23a25583763c9","uploadDebugSymbols":false,"fileOutput":"ios/Runner/GoogleService-Info.plist"}}},"dart":{"lib/firebase_options.dart":{"projectId":"teambuilder-plus-fe74d","configurations":{"ios":"1:312163687148:ios:9db93e08c23a25583763c9"}}}}}}
+{
+  "flutter": {
+    "platforms": {
+      "ios": {
+        "buildConfigurations": {
+          "Debug": {
+            "projectId": "teambuilder-plus-fe74d",
+            "appId": "1:312163687148:ios:9db93e08c23a25583763c9",
+            "uploadDebugSymbols": false,
+            "fileOutput": "ios/Runner/GoogleService-Info.plist"
+          }
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "teambuilder-plus-fe74d",
+          "configurations": {
+            "ios": "1:312163687148:ios:9db93e08c23a25583763c9"
+          }
+        }
+      }
+    }
+  },
+  "functions": {
+    "source": "functions"
+  },
+  "emulators": {
+    "auth": {
+      "port": 9099
+    },
+    "functions": {
+      "port": 5001
+    },
+    "firestore": {
+      "port": 8585
+    },
+    "ui": {
+      "enabled": true,
+      "port": 4000
+    },
+    "singleProjectMode": true
+  }
+}
