@@ -405,3 +405,50 @@ Visit your Dashboard and click ‘Join Opportunity’ to get started.`,
     // Don't re-throw, as this is a background helper function, just log the error.
   }
 }
+
+
+// const { onRequest } = require("firebase-functions/v2/https");
+
+// 🔁 Recursive helper to gather all downline UIDs
+async function getDownlineUids(referralCode, depth = 0, maxDepth = 10) {
+  if (depth >= maxDepth) return [];
+
+  const snapshot = await db.collection("users")
+    .where("referredBy", "==", referralCode)
+    .get();
+
+  const directUids = snapshot.docs.map(doc => doc.id);
+  let allUids = [...directUids];
+
+  for (const doc of snapshot.docs) {
+    const childReferralCode = doc.data().referralCode;
+    const childUids = await getDownlineUids(childReferralCode, depth + 1, maxDepth);
+    allUids = [...allUids, ...childUids];
+  }
+
+  return allUids;
+}
+
+// 🔧 HTTP Function to update downlineIds[]
+exports.updateDownlineTree = onRequest(async (req, res) => {
+  const { uid } = req.query;
+  if (!uid) {
+    return res.status(400).json({ error: "Missing uid parameter" });
+  }
+
+  const userDoc = await db.collection("users").doc(uid).get();
+  if (!userDoc.exists) {
+    return res.status(404).json({ error: "User not found" });
+  }
+
+  const referralCode = userDoc.data().referralCode;
+  const downlineIds = await getDownlineUids(referralCode);
+
+  await db.collection("users").doc(uid).update({ downlineIds });
+
+  return res.status(200).json({
+    message: `✅ downlineIds updated for user ${uid}`,
+    total: downlineIds.length,
+    downlineIds
+  });
+});

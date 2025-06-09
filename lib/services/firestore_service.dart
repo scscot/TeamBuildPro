@@ -1,3 +1,4 @@
+// lib/services/firestore_service.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_model.dart';
 import 'package:flutter/foundation.dart';
@@ -168,6 +169,28 @@ class FirestoreService {
       currentCode = data['referredBy'];
     }
   }
+
+  // New method to fetch admin settings
+  Future<List<String>> getAdminAllowedCountries(String adminUid) async {
+    try {
+      final doc = await _firestore.collection('admin_settings').doc(adminUid).get();
+      if (doc.exists) {
+        final data = doc.data();
+        if (data != null && data.containsKey('countries')) {
+          // Ensure that 'countries' is a List<dynamic> before casting
+          final countriesData = data['countries'];
+          if (countriesData is List) {
+            return List<String>.from(countriesData.map((e) => e.toString()));
+          }
+        }
+      }
+      return []; // Return empty list if no settings or countries found
+    } catch (e) {
+      debugPrint('❌ Error fetching admin allowed countries for $adminUid: $e');
+      return [];
+    }
+  }
+
 
   // PATCH START: Send a message between users with allowedUsers thread metadata
   Future<void> sendMessage({

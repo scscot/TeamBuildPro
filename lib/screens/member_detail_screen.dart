@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:cloud_firestore/cloud_firestore.dart'; // Added for clarity, though it might be transitive
+// import 'package:cloud_firestore/cloud_firestore.dart'; // Added for clarity, though it might be transitive
 import 'package:flutter/foundation.dart' show kDebugMode; // Import kDebugMode
 import 'dart:developer' as developer; // Import for logging
 
@@ -64,15 +64,6 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     } catch (e) {
       _log('❌ Failed to load member: $e');
     }
-  }
-
-  bool _canSendMessage() {
-    if (_user == null || _currentUser == null) return false;
-    // The button should be shown if the current user is an admin or directly sponsored this member.
-    // The actual restriction (for non-direct sponsor admins) is handled in _handleSendMessage.
-    final isAdmin = _currentUser!.role == 'admin';
-    final isDirectSponsor = _user!.referredBy == _currentUser!.referralCode;
-    return isAdmin || isDirectSponsor;
   }
 
   // PATCH START: Conditional message access logic based on new requirements
@@ -196,22 +187,22 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                   if (_sponsorName != null && _sponsorName!.isNotEmpty)
                     _buildInfoRow('Sponsor Name', _sponsorName!),
                   const SizedBox(height: 30),
-                  // if (_canSendMessage()) // Button visibility still based on original _canSendMessage logic
-                    Center(
-                      child: ElevatedButton.icon(
-                        onPressed: _handleSendMessage, // This is where the new logic triggers
-                        icon: const Icon(Icons.message),
-                        label: const Text('Send Message'),
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 24.0, vertical: 12.0),
-                          textStyle: const TextStyle(fontSize: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8.0),
-                          ),
+                  // The button now always shows, and its onPressed directly calls _handleSendMessage
+                  Center(
+                    child: ElevatedButton.icon(
+                      onPressed: _handleSendMessage, // This is where the new logic triggers
+                      icon: const Icon(Icons.message),
+                      label: const Text('Send Message'),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 24.0, vertical: 12.0),
+                        textStyle: const TextStyle(fontSize: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8.0),
                         ),
                       ),
                     ),
+                  ),
                 ],
               ),
             ),
