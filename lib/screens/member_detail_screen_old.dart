@@ -1,9 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:cloud_firestore/cloud_firestore.dart'; // Added for clarity, though it might be transitive
-import 'package:flutter/foundation.dart' show kDebugMode; // Import kDebugMode
-import 'dart:developer' as developer; // Import for logging
-
 import '../widgets/header_widgets.dart';
 import '../services/firestore_service.dart';
 import '../models/user_model.dart';
@@ -21,8 +17,8 @@ class MemberDetailScreen extends StatefulWidget {
 }
 
 class _MemberDetailScreenState extends State<MemberDetailScreen> {
-  UserModel? _user; // The member whose profile is being viewed
-  UserModel? _currentUser; // The currently logged-in user
+  UserModel? _user;
+  UserModel? _currentUser;
   String? _sponsorName;
 
   @override
@@ -31,20 +27,12 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     _loadUserData();
   }
 
-  // A simple log function that only prints in debug mode
-  void _log(String message) {
-    if (kDebugMode) {
-      developer.log(message, name: 'MemberDetailScreen');
-    }
-  }
-
   Future<void> _loadUserData() async {
     try {
       final currentUser = await SessionManager().getCurrentUser();
       final member = await FirestoreService().getUser(widget.userId);
 
       if (member != null && currentUser != null) {
-        if (!mounted) return; // Check mounted before setState
         setState(() {
           _user = member;
           _currentUser = currentUser;
@@ -53,57 +41,37 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
         if (member.referredBy != null && member.referredBy!.isNotEmpty) {
           final sponsorName = await FirestoreService()
               .getSponsorNameByReferralCode(member.referredBy!);
-          if (mounted) {
-            _log('✅ Sponsor name resolved: $sponsorName');
-            setState(() => _sponsorName = sponsorName);
-          }
+          if (mounted) setState(() => _sponsorName = sponsorName);
         }
-      } else {
-        _log('⚠️ User data or current user data is null. Cannot load member details.');
       }
     } catch (e) {
-      _log('❌ Failed to load member: $e');
+      debugPrint('❌ Failed to load member: $e');
     }
   }
 
   bool _canSendMessage() {
     if (_user == null || _currentUser == null) return false;
-    // The button should be shown if the current user is an admin or directly sponsored this member.
-    // The actual restriction (for non-direct sponsor admins) is handled in _handleSendMessage.
     final isAdmin = _currentUser!.role == 'admin';
     final isDirectSponsor = _user!.referredBy == _currentUser!.referralCode;
     return isAdmin || isDirectSponsor;
   }
 
-  // PATCH START: Conditional message access logic based on new requirements
+  // PATCH START: Conditional message access logic
   void _handleSendMessage() {
-    // Check if the current user is an admin
-    final isAdminUser = _currentUser!.role == 'admin';
+    final isDirectSponsor = _user!.referredBy == _currentUser!.referralCode;
 
-    if (!isAdminUser) {
-      // If NOT an admin, no restrictions apply. Proceed to message thread.
-      _log('ℹ️ Non-admin user sending message. Proceeding without subscription check.');
-      _navigateToMessageThread();
-      return;
-    }
-
-    // If it IS an admin user, perform the subscription check.
-    _log('🔎 Admin user attempting to send message. Checking subscription status...');
     SubscriptionService.checkAdminSubscriptionStatus(_currentUser!.uid)
         .then((status) {
       final isActive = status['isActive'] == true;
-      final trialExpired = status['trialExpired'] == true;
-      if (!mounted) return; // Check if the widget is still mounted
+      if (!mounted) return;
 
-      // Admin user is restricted if trial has expired AND subscription is not active
-      if (trialExpired && !isActive) {
-        _log('⚠️ Admin user (UID: ${_currentUser!.uid}) is restricted: Trial expired AND subscription not active. Showing subscription dialog.');
+      if (!isDirectSponsor && !isActive) {
         showDialog(
           context: context,
           builder: (_) => AlertDialog(
             title: const Text('Subscription Required'),
             content: const Text(
-                'Your admin trial has ended or your subscription is not active. Please activate your subscription to continue messaging.'),
+                'To message downline members you did not directly sponsor, please activate your admin subscription.'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(),
@@ -120,49 +88,24 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           ),
         );
       } else {
-        // Admin user is either in trial, or subscription is active. Proceed.
-        _log('✅ Admin user (UID: ${_currentUser!.uid}) is allowed to send message. Proceeding to message thread.');
-        _navigateToMessageThread();
-      }
-    }).catchError((error) {
-      // Handle potential errors during subscription status check
-      _log('❌ Error checking admin subscription status: $error');
-      if (!mounted) return;
-      showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text('Error'),
-          content: const Text('Failed to check subscription status. Please try again later.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('OK'),
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => MessageThreadScreen(
+              recipientId: _user!.uid,
+              recipientName: '${_user!.firstName} ${_user!.lastName}',
             ),
-          ],
-        ),
-      );
+          ),
+        );
+      }
     });
-  }
-
-  // Helper method to navigate to the message thread, to avoid code duplication
-  void _navigateToMessageThread() {
-    if (!mounted) return;
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => MessageThreadScreen(
-          recipientId: _user!.uid,
-          recipientName: '${_user!.firstName} ${_user!.lastName}',
-        ),
-      ),
-    );
   }
 // PATCH END
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: const AppHeaderWithMenu(), // Corrected: Removed unnecessary new
+      appBar: AppHeaderWithMenu(),
       body: _user == null
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
@@ -177,7 +120,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                           _user!.photoUrl != null && _user!.photoUrl!.isNotEmpty
                               ? NetworkImage(_user!.photoUrl!)
                               : const AssetImage(
-                                      'assets/images/default_avatar.png') // Corrected path
+                                      '..assets/images/default_avatar.png')
                                   as ImageProvider,
                     ),
                   ),
@@ -196,10 +139,10 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                   if (_sponsorName != null && _sponsorName!.isNotEmpty)
                     _buildInfoRow('Sponsor Name', _sponsorName!),
                   const SizedBox(height: 30),
-                  // if (_canSendMessage()) // Button visibility still based on original _canSendMessage logic
+                  if (_canSendMessage())
                     Center(
                       child: ElevatedButton.icon(
-                        onPressed: _handleSendMessage, // This is where the new logic triggers
+                        onPressed: _handleSendMessage,
                         icon: const Icon(Icons.message),
                         label: const Text('Send Message'),
                         style: ElevatedButton.styleFrom(

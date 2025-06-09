@@ -52,6 +52,8 @@ secrets/ # Directory for secrets, should almost always be ignored.
 #.vscode/
 
 functions/
+node_modules/
+secrets/
 
 # === Flutter / Dart / Pub Specific Ignores ===
 # Flutter build output directory
