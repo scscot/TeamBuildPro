@@ -54,6 +54,7 @@ secrets/ # Directory for secrets, should almost always be ignored.
 functions/
 node_modules/
 secrets/
+assets/
 
 # === Flutter / Dart / Pub Specific Ignores ===
 # Flutter build output directory
