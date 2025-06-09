@@ -53,7 +53,7 @@ secrets/ # Directory for secrets, should almost always be ignored.
 
 functions/
 node_modules/
-secrets/
+secrets/serviceAccountKey.json
 assets/
 
 # === Flutter / Dart / Pub Specific Ignores ===
@@ -159,4 +159,4 @@ macos/Flutter/GeneratedPluginRegistrant.swift
 
 # Git-related files that should always be committed
 # .gitignore
-# .gitattributes
+# .gitattributessecrets/serviceAccountKey.json
