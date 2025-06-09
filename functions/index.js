@@ -6,6 +6,9 @@ const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { initializeApp, applicationDefault } = require("firebase-admin/app"); // Import applicationDefault
 const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging"); // Import getMessaging
+// No need for 'functions' and 'admin' imports if using v2 and specific service imports
+// const functions = require("firebase-functions");
+// const admin = require("firebase-admin");
 
 // Initialize Firebase Admin SDK once for all functions
 // Using applicationDefault() is best practice for automatic credential loading
@@ -405,7 +408,7 @@ Visit your Dashboard and click ‘Join Opportunity’ to get started.`,
 
 
 // 🔁 Recursive helper to gather all downline UIDs
-async function getDownlineUids(referralCode, depth = 0, maxDepth = 10) {
+async function getDownlineUids(referralCode, depth = 0, maxDepth = 100) { // Changed maxDepth to 100
   if (depth >= maxDepth) return [];
 
   const snapshot = await db.collection("users")

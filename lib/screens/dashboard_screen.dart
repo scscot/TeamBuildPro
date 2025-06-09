@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../screens/downline_team_screen.dart';
+import '../screens/optimized_downline_team_screen.dart'; // Updated import
 import '../screens/profile_screen.dart';
 import '../screens/share_screen.dart';
 import '../services/session_manager.dart';
@@ -185,7 +185,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 context,
                 MaterialPageRoute(
                   builder: (_) =>
-                      const DownlineTeamScreen(referredBy: 'demo-user'),
+                      const OptimizedDownlineTeamScreen(referredBy: 'demo-user'), // Updated to OptimizedDownlineTeamScreen
                 ),
               ),
             ),

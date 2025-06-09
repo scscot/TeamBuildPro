@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../screens/profile_screen.dart';
-import '../screens/downline_team_screen.dart';
+import '../screens/optimized_downline_team_screen.dart'; // Updated import
 import '../screens/share_screen.dart';
 import '../screens/login_screen.dart';
 import '../screens/dashboard_screen.dart';
@@ -139,7 +139,7 @@ class _AppHeaderWithMenuState extends State<AppHeaderWithMenu> {
                         context,
                         MaterialPageRoute(
                           builder: (_) =>
-                              const DownlineTeamScreen(referredBy: 'demo-user'),
+                              const OptimizedDownlineTeamScreen(referredBy: 'demo-user'), // Updated to OptimizedDownlineTeamScreen
                         ),
                       );
                       break;

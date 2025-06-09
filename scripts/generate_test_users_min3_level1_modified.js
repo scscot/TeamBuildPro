@@ -43,7 +43,7 @@ function createUser(level, referredBy, uplineAdminUid) {
   };
 }
 
-function buildHierarchy(maxLevels = 5, teamSize = 100) {
+function buildHierarchy(maxLevels = 5, teamSize = 300) {
   const existingAdminUid = "KJ8uFnlhKhWgBa4NVcwT";
   const existingAdminReferralCode = "KJ8uFnlhKhWgBa4NVcwT";
 
