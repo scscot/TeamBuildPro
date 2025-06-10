@@ -62,7 +62,7 @@ const DownlineTree = ({ currentUserId, allUsersMap, level = 0 }) => {
       unsubscribeRef.current = onSnapshot(q, (snapshot) => {
         const children = [];
         snapshot.forEach((doc) => {
-          const childData = doc.data();
+          const childData = { uid: doc.id, ...doc.data() }; // Include UID from doc.id
           children.push(childData);
           // Also update the central allUsersMap with this child data
           fetchDirectDownline(childData); // Use a passed function to update main state
@@ -79,7 +79,7 @@ const DownlineTree = ({ currentUserId, allUsersMap, level = 0 }) => {
         unsubscribeRef.current(); // Clean up on unmount or re-render
       }
     };
-  }, [currentUserId, user?.referralCode, db, auth.currentUser, fetchDirectDownline]); // Depend on user's referralCode
+  }, [currentUserId, user?.referralCode, db, auth?.currentUser, fetchDirectDownline]); // Depend on user's referralCode
 
   if (!user) return null; // Should not happen if allUsersMap is well-managed
 
@@ -134,15 +134,57 @@ const DownlineTree = ({ currentUserId, allUsersMap, level = 0 }) => {
   );
 };
 
+// Function to get query parameters (for Flutter WebView embedding)
+const getQueryParams = () => {
+  if (typeof window === 'undefined') return {}; // Safety for server-side rendering or non-browser environments
+  const params = new URLSearchParams(window.location.search);
+  return {
+    firebaseConfig: params.get('firebaseConfig') ? JSON.parse(decodeURIComponent(params.get('firebaseConfig'))) : null,
+    initialAuthToken: params.get('initialAuthToken') || null,
+    appId: params.get('appId') || 'default-app-id',
+  };
+};
 
 // Main App Component
 function App() {
-  // Firebase configuration and auth global variables
-  const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-  const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-  const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id'; // Use provided app ID
+  // Try to get config from global Canvas variables (when embedded in Canvas)
+  let initialFbConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+  let initialAuthTokenVal = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+  let initialAppIdVal = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-  // Firebase states
+  // If not from Canvas globals, try from URL query parameters (for Flutter WebView)
+  if (!initialFbConfig || !initialAuthTokenVal) {
+    const queryParams = getQueryParams();
+    initialFbConfig = queryParams.firebaseConfig;
+    initialAuthTokenVal = queryParams.initialAuthToken;
+    initialAppIdVal = queryParams.appId;
+  }
+
+  // Fallback for direct browser access (e.g., https://your-project-id.web.app/)
+  // YOU MUST REPLACE THESE PLACEHOLDER VALUES WITH YOUR ACTUAL FIREBASE PROJECT CONFIG
+  // You can find this in your Firebase Console -> Project settings -> General
+  if (!initialFbConfig) {
+      console.warn("No Firebase config found from Canvas globals or URL parameters. Using placeholder values. For proper deployment, ensure these are passed or hardcoded correctly.");
+      initialFbConfig = {
+          apiKey: "AIzaSyA45ZN9KUuaYT0OHYZ9DmX2Jc8028Ftcvc",
+          authDomain: "teambuilder-plus-fe74d.firebaseapp.com",
+          projectId: "teambuilder-plus-fe74d",
+          storageBucket: "teambuilder-plus-fe74d.firebasestorage.app",
+          messagingSenderId: "312163687148",
+          appId: "1:312163687148:web:43385dff773dab0b3763c9",
+          measurementId: "G-G4E4TBBPZ7"
+              };
+      // For direct browser access without initial token, we rely on anonymous auth or user login
+      initialAuthTokenVal = null;
+      initialAppIdVal = initialFbConfig.projectId; // Default to projectId if no other app ID
+  }
+
+
+  // Firebase states (now initialized from the more robust config loading)
+  const [firebaseConfig] = useState(initialFbConfig);
+  const [initialAuthToken] = useState(initialAuthTokenVal);
+  const [appId] = useState(initialAppIdVal);
+
   const [app, setApp] = useState(null);
   const [db, setDb] = useState(null);
   const [auth, setAuth] = useState(null);
@@ -158,8 +200,8 @@ function App() {
 
   // Initialize Firebase and handle authentication
   useEffect(() => {
-    if (!firebaseConfig) {
-      setError("Firebase configuration is missing.");
+    if (!firebaseConfig || !firebaseConfig.projectId) { // Check for a valid config
+      setError("Firebase configuration is incomplete or missing. Please ensure projectId is set.");
       setLoading(false);
       return;
     }
@@ -177,6 +219,7 @@ function App() {
         if (user) {
           setUserId(user.uid);
           setIsAuthReady(true);
+          console.log(`Initial authenticated user UID: ${user.uid}`); // Added console log
           setLoading(false);
         } else {
           // If not authenticated, try to sign in with custom token or anonymously
@@ -188,7 +231,7 @@ function App() {
             }
           } catch (authError) {
             console.error("Firebase Auth Error:", authError);
-            setError(`Authentication failed: ${authError.message}`);
+            setError(`Authentication failed: ${authError.message}. If testing locally, ensure your user is setup or anonymous auth is enabled.`);
             setLoading(false);
           }
         }
@@ -197,10 +240,10 @@ function App() {
       return () => unsubscribeAuth(); // Cleanup auth listener
     } catch (initError) {
       console.error("Firebase Initialization Error:", initError);
-      setError(`Failed to initialize Firebase: ${initError.message}`);
+      setError(`Failed to initialize Firebase: ${initError.message}. Check your Firebase config.`);
       setLoading(false);
     }
-  }, [firebaseConfig, initialAuthToken]);
+  }, [firebaseConfig, initialAuthToken]); // Depend on resolved config and token
 
   // Fetch the current authenticated user's data once auth is ready
   useEffect(() => {
@@ -215,14 +258,16 @@ function App() {
             setExpandedNodes([userData.uid]); // Automatically expand the root user
           }
         } else {
-          console.warn("Current user document does not exist in Firestore.");
-          setError("Your user profile is not found in the database. Please ensure the admin user exists.");
+          console.warn("Current user document does not exist in Firestore for UID:", userId);
+          // Refined error message for missing document
+          setError(`Your user profile (UID: ${userId}) was not found in the database. Please ensure a user document exists in the 'users' collection for this authenticated UID, and check your Firestore security rules.`);
           // For a robust app, you might want to create a basic profile here.
         }
         setLoading(false);
       }, (error) => {
         console.error("Error fetching current user document:", error);
-        setError(`Failed to fetch user profile: ${error.message}`);
+        // This is where "Missing or insufficient permissions" might occur
+        setError(`Failed to fetch user profile for UID ${userId}: ${error.message}. Please check your Firestore security rules for the 'users' collection, especially the 'get' permission for authenticated users to read their own document.`);
         setLoading(false);
       });
 
