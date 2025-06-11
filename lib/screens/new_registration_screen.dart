@@ -3,16 +3,26 @@ import 'package:uuid/uuid.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart'; // Added missing import
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
 import '../services/session_manager.dart';
 import '../data/states_by_country.dart';
 import 'dashboard_screen.dart';
+// import '../main.dart' as main_app; // Removed unused import
 
 class NewRegistrationScreen extends StatefulWidget {
   final String? referralCode;
-  const NewRegistrationScreen({super.key, this.referralCode});
+  final Map<String, dynamic> firebaseConfig;
+  final String appId;
+
+  const NewRegistrationScreen({
+    super.key,
+    this.referralCode,
+    required this.firebaseConfig,
+    required this.appId,
+  });
 
   @override
   State<NewRegistrationScreen> createState() => _NewRegistrationScreenState();
@@ -47,9 +57,9 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
   }
 
   Future<void> _initReferral() async {
-    if (isDevMode) {
+    if (isDevMode && widget.referralCode == null) {
       setState(() {
-        _referredBy = '537feec3';
+        _referredBy = 'KJ8uFnlhKhWgBa4NVcwT'; // Example: Your admin's referral code
       });
     }
 
@@ -63,6 +73,7 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
       final uri = Uri.parse(
           'https://us-central1-teambuilder-plus-fe74d.cloudfunctions.net/getUserByReferralCode?code=$code');
       final response = await http.get(uri);
+      if (!mounted) return;
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -81,6 +92,7 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
         if (uplineAdminUid != null) {
           final countriesResponse = await http.get(Uri.parse(
               'https://us-central1-teambuilder-plus-fe74d.cloudfunctions.net/getCountriesByAdminUid?uid=$uplineAdminUid'));
+          if (!mounted) return;
 
           if (countriesResponse.statusCode == 200) {
             final countryData = jsonDecode(countriesResponse.body);
@@ -93,9 +105,13 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
         }
       } else {
         debugPrint('❌ Referral lookup failed: ${response.statusCode}');
+        if (!mounted) return;
+        setState(() => _role = 'admin');
       }
     } catch (e) {
       debugPrint('❌ Error in getUserByReferralCode: $e');
+      if (!mounted) return;
+      setState(() => _role = 'admin');
     }
   }
 
@@ -144,10 +160,10 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
       if (userDoc == null) break;
 
       final isAdmin = userDoc.role == 'admin';
-      final direct = userDoc.directSponsorCount ?? 0;
-      final total = userDoc.totalTeamCount ?? 0;
-      final directMin = userDoc.directSponsorMin ?? 1;
-      final totalMin = userDoc.totalTeamMin ?? 1;
+      final direct = userDoc.directSponsorCount; // Corrected to camelCase
+      final total = userDoc.totalTeamCount;     // Corrected to camelCase
+      final directMin = 5;
+      final totalMin = 20;
       final qualified = userDoc.qualifiedDate != null;
 
       if (!isAdmin && !qualified && direct >= directMin && total >= totalMin) {
@@ -206,15 +222,14 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
         referralCode: referralCode,
         referredBy: referredBy,
         level: level,
-        directSponsorCount: 0,
-        totalTeamCount: 0,
+        directSponsorCount: 0, // Corrected to camelCase
+        totalTeamCount: 0,     // Corrected to camelCase
         role: _role ?? 'user',
+        uplineAdmin: uplineAdmin,
       );
 
-      final userMap = newUser.toMap();
-      userMap['upline_admin'] = uplineAdmin;
+      await FirestoreService().createUser(newUser.toMap());
 
-      await FirestoreService().createUser(userMap);
       if (referredBy != null && referredBy.isNotEmpty) {
         await _callSecureSponsorUpdate(referredBy);
       }
@@ -222,9 +237,15 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
       await SessionManager().setCurrentUser(newUser);
 
       if (mounted) {
+        final String? currentAuthToken = await FirebaseAuth.instance.currentUser?.getIdToken();
         Navigator.pushReplacement(
+          // ignore: use_build_context_synchronously
           context,
-          MaterialPageRoute(builder: (_) => const DashboardScreen()),
+          MaterialPageRoute(builder: (_) => DashboardScreen(
+            firebaseConfig: widget.firebaseConfig,
+            appId: widget.appId,
+            initialAuthToken: currentAuthToken,
+          )),
         );
       }
     } catch (e) {

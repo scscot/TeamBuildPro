@@ -3,19 +3,31 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'dart:async'; // Added for StreamSubscription
+
 import '../models/user_model.dart';
 import '../services/firestore_service.dart';
 import '../services/session_manager.dart';
 import '../widgets/header_widgets.dart';
+// import 'package:firebase_auth/firebase_auth.dart'; // Needed for FirebaseAuth to get currentUser Uid
 
 class MessageThreadScreen extends StatefulWidget {
   final String recipientId;
   final String recipientName;
+  // Add required parameters for consistency with current app navigation
+  final Map<String, dynamic> firebaseConfig;
+  final String? initialAuthToken;
+  final String appId;
+  final String? threadId; // Optional if coming from a direct thread link
 
   const MessageThreadScreen({
     super.key,
     required this.recipientId,
     required this.recipientName,
+    required this.firebaseConfig, // Required
+    this.initialAuthToken,       // Nullable
+    required this.appId,         // Required
+    this.threadId,               // Optional
   });
 
   @override
@@ -28,9 +40,12 @@ class _MessageThreadScreenState extends State<MessageThreadScreen> {
   final SessionManager _sessionManager = SessionManager();
 
   String? _currentUserId;
-  UserModel? _recipientUser;
+  UserModel? _recipientUser; // Holds the UserModel of the recipient
   String? _threadId;
   bool _isThreadReady = false;
+
+  // StreamSubscription for real-time messages
+  StreamSubscription<QuerySnapshot>? _messagesSubscription;
 
   @override
   void initState() {
@@ -40,72 +55,114 @@ class _MessageThreadScreenState extends State<MessageThreadScreen> {
 
   Future<void> _initializeThread() async {
     final currentUser = await _sessionManager.getCurrentUser();
-    if (!mounted || currentUser == null) return;
+    if (!mounted || currentUser == null) {
+      debugPrint('Error: Current user not found for message thread.');
+      return;
+    }
 
     final uid = currentUser.uid;
-    final threadId = _generateThreadId(uid, widget.recipientId);
-    final threadDoc =
-        FirebaseFirestore.instance.collection('messages').doc(threadId);
 
-    final docSnapshot = await threadDoc.get();
+    // Use widget.threadId if provided, otherwise generate a new one
+    final calculatedThreadId = widget.threadId ?? _generateThreadId(uid, widget.recipientId);
+    final threadDocRef = FirebaseFirestore.instance.collection('messages').doc(calculatedThreadId);
+
+    final docSnapshot = await threadDocRef.get();
     if (!docSnapshot.exists) {
-      await threadDoc.set({
+      await threadDocRef.set({
         'allowedUsers': [uid, widget.recipientId],
         'createdAt': FieldValue.serverTimestamp(),
       });
     }
 
+    // Fetch the recipient's UserModel for their photo and full name
     final recipient = await _firestoreService.getUser(widget.recipientId);
 
-    if (!mounted) return;
+    if (!mounted) return; // Guard against setState after async gap
+
     setState(() {
       _currentUserId = uid;
-      _threadId = threadId;
-      _recipientUser = recipient;
+      _threadId = calculatedThreadId;
+      _recipientUser = recipient; // Assign the fetched UserModel here
       _isThreadReady = true;
     });
+
+    // Note: _listenForMessages is typically called here if you want a local StreamBuilder
+    // to listen to it. For now, the StreamBuilder in build() directly consumes the Firestore snapshots().
   }
+
+  // This method is no longer needed with StreamBuilder directly in build.
+  // Future<QuerySnapshot> _getMessagesOnce() {
+  //   if (_threadId == null) {
+  //     debugPrint('Cannot get messages: Thread ID is null.');
+  //     // Return an empty QuerySnapshot instead of null
+  //     return Future.value(FirebaseFirestore.instance.collection('dummy').get());
+  //   }
+  //   return FirebaseFirestore.instance
+  //       .collection('messages')
+  //       .doc(_threadId)
+  //       .collection('chat')
+  //       .orderBy('timestamp', descending: false)
+  //       .get();
+  // }
 
   String _generateThreadId(String uid1, String uid2) {
     final sorted = [uid1, uid2]..sort();
     return '${sorted[0]}_${sorted[1]}';
   }
 
-  Future<QuerySnapshot> _getMessagesOnce() {
-    return FirebaseFirestore.instance
-        .collection('messages')
-        .doc(_threadId)
-        .collection('chat')
-        .orderBy('timestamp', descending: false)
-        .get();
-  }
-
   Future<void> _sendMessage() async {
     final text = _controller.text.trim();
-    if (text.isEmpty || _currentUserId == null || _threadId == null) return;
+    // Corrected: Use _currentUserId and _threadId which are state variables
+    if (text.isEmpty || _currentUserId == null || _threadId == null || _recipientUser == null) {
+      debugPrint('Cannot send message: Text empty or IDs/Recipient null. Current User: $_currentUserId, Thread ID: $_threadId, Recipient: ${_recipientUser?.uid}');
+      if (!mounted) return; // Guard context usage before SnackBar
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cannot send empty message or user data missing.')),
+      );
+      return;
+    }
 
     await _firestoreService.sendMessage(
-      senderId: _currentUserId!,
-      recipientId: widget.recipientId,
+      threadId: _threadId!, // Non-nullable after check
+      senderId: _currentUserId!, // Non-nullable after check
+      recipientId: widget.recipientId, // This is the ID of the person we are talking to
       text: text,
+      timestamp: FieldValue.serverTimestamp(), // Firestore server timestamp
     );
     _controller.clear();
   }
 
   @override
+  void dispose() {
+    _controller.dispose();
+    _messagesSubscription?.cancel(); // Cancel messages subscription
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     if (!_isThreadReady) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+      return Scaffold(
+        appBar: AppHeaderWithMenu( // Pass required args
+          firebaseConfig: widget.firebaseConfig,
+          initialAuthToken: widget.initialAuthToken,
+          appId: widget.appId,
+        ),
+        body: const Center(child: CircularProgressIndicator()),
       );
     }
 
+    // Corrected: Use _recipientUser properties directly, provide fallbacks
     final displayName = _recipientUser != null
-        ? '${_recipientUser!.firstName} ${_recipientUser!.lastName}'
-        : widget.recipientName;
+        ? '${_recipientUser!.firstName ?? ''} ${_recipientUser!.lastName ?? ''}'.trim()
+        : widget.recipientName; // Fallback to widget.recipientName if _recipientUser not loaded
 
     return Scaffold(
-      appBar: AppHeaderWithMenu(),
+      appBar: AppHeaderWithMenu( // Pass required args
+        firebaseConfig: widget.firebaseConfig,
+        initialAuthToken: widget.initialAuthToken,
+        appId: widget.appId,
+      ),
       body: Column(
         children: [
           const SizedBox(height: 16),
@@ -114,10 +171,11 @@ class _MessageThreadScreenState extends State<MessageThreadScreen> {
               children: [
                 CircleAvatar(
                   radius: 40,
+                  // Corrected: Use _recipientUser.photoUrl
                   backgroundImage: _recipientUser?.photoUrl != null &&
                           _recipientUser!.photoUrl!.isNotEmpty
                       ? NetworkImage(_recipientUser!.photoUrl!)
-                      : const AssetImage('assets/images/default_avatar.png')
+                      : const AssetImage('assets/images/default_avatar.png') // Ensure asset exists
                           as ImageProvider,
                 ),
                 const SizedBox(height: 8),
@@ -129,16 +187,24 @@ class _MessageThreadScreenState extends State<MessageThreadScreen> {
           ),
           const Divider(height: 32),
           Expanded(
-            child: FutureBuilder<QuerySnapshot>(
-              future: _getMessagesOnce(),
+            child: StreamBuilder<QuerySnapshot>( // Changed to StreamBuilder for real-time updates
+              stream: _threadId != null // Only provide stream if threadId is ready
+                  ? FirebaseFirestore.instance
+                      .collection('messages')
+                      .doc(_threadId!) // Use _threadId! as it's checked above
+                      .collection('chat')
+                      .orderBy('timestamp', descending: false)
+                      .snapshots()
+                  : null, // Provide null stream if not ready
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
+                  debugPrint('Error loading messages: ${snapshot.error}');
                   return Center(child: Text('Error: ${snapshot.error}'));
                 }
-                if (snapshot.connectionState == ConnectionState.waiting) {
+                if (snapshot.connectionState == ConnectionState.waiting || snapshot.data == null) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                final docs = snapshot.data?.docs ?? [];
+                final docs = snapshot.data!.docs; // snapshot.data is non-null here
                 return ListView.builder(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

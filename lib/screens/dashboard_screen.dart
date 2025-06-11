@@ -1,19 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../screens/optimized_downline_team_screen.dart'; // Updated import
+import 'package:firebase_auth/firebase_auth.dart';
+import '../screens/downline_team_screen.dart'; // No longer hide UserModel here
 import '../screens/profile_screen.dart';
 import '../screens/share_screen.dart';
 import '../services/session_manager.dart';
-import '../models/user_model.dart';
+import '../models/user_model.dart'; // Canonical UserModel
 import '../widgets/header_widgets.dart';
 import '../screens/settings_screen.dart';
 import '../screens/join_opportunity_screen.dart';
 import '../screens/my_biz_screen.dart';
 import '../screens/message_center_screen.dart';
 import '../screens/notifications_screen.dart';
+// import '../main.dart' as main_app; // Access global firebaseConfig
 
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key});
+  final Map<String, dynamic> firebaseConfig;
+  final String? initialAuthToken;
+  final String appId;
+
+  const DashboardScreen({
+    super.key,
+    required this.firebaseConfig,
+    this.initialAuthToken,
+    required this.appId,
+  });
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -38,7 +49,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     if (sessionUser == null || sessionUser.uid.isEmpty) {
       debugPrint('❌ Session user is null or has empty UID');
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false); // Guarded setState
       return;
     }
 
@@ -52,27 +63,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final adminUid = updatedUser.uplineAdmin;
       debugPrint('🔎 uplineAdmin from Firestore: $adminUid');
 
-      final adminSettings = await FirebaseFirestore.instance
-          .collection('admin_settings')
-          .doc(adminUid)
-          .get();
+      // Fetch admin settings using the adminUid if it exists
+      DocumentSnapshot<Map<String, dynamic>>? adminSettingsDoc;
+      if (adminUid != null && adminUid.isNotEmpty) {
+        adminSettingsDoc = await FirebaseFirestore.instance
+            .collection('admin_settings')
+            .doc(adminUid)
+            .get();
+      }
 
-      final int directSponsorMin =
-          adminSettings.data()?['direct_sponsor_min'] ?? 5;
-      final int totalTeamMin = adminSettings.data()?['total_team_min'] ?? 20;
+      final int directSponsorMin = adminSettingsDoc?.data()?['direct_sponsor_min'] ?? 5;
+      final int totalTeamMin = adminSettingsDoc?.data()?['total_team_min'] ?? 20;
 
       debugPrint('📊 directSponsorMin from Firestore: $directSponsorMin');
       debugPrint('📊 totalTeamMin from Firestore: $totalTeamMin');
 
-      setState(() {
-        _user = updatedUser;
-        _directSponsorMin = directSponsorMin;
-        _totalTeamMin = totalTeamMin;
-        _isLoading = false;
-      });
+      if (mounted) { // Guarded setState
+        setState(() {
+          _user = updatedUser;
+          _directSponsorMin = directSponsorMin;
+          _totalTeamMin = totalTeamMin;
+          _isLoading = false;
+        });
+      }
     } catch (e) {
       debugPrint('🔥 Error loading dashboard data: $e');
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false); // Guarded setState
     }
   }
 
@@ -87,7 +103,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         .where('read', isEqualTo: false)
         .snapshots()
         .listen((snapshot) {
-      setState(() => _unreadNotificationCount = snapshot.docs.length);
+      if (mounted) setState(() => _unreadNotificationCount = snapshot.docs.length); // Guarded setState
     });
   }
 
@@ -145,7 +161,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final user = _user;
 
     return Scaffold(
-      appBar: AppHeaderWithMenu(),
+      appBar: AppHeaderWithMenu( // Corrected: Pass required arguments
+        firebaseConfig: widget.firebaseConfig,
+        initialAuthToken: widget.initialAuthToken,
+        appId: widget.appId,
+      ),
       body: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Column(
@@ -167,7 +187,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 label: 'Account Settings',
                 onPressed: () => Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                  MaterialPageRoute(builder: (_) => SettingsScreen( // Pass required args
+                    firebaseConfig: widget.firebaseConfig,
+                    initialAuthToken: widget.initialAuthToken,
+                    appId: widget.appId,
+                  )),
                 ),
               ),
             buildButton(
@@ -175,26 +199,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
               label: 'My Profile',
               onPressed: () => Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                MaterialPageRoute(builder: (_) => ProfileScreen( // Pass required args
+                  firebaseConfig: widget.firebaseConfig,
+                  initialAuthToken: widget.initialAuthToken,
+                  appId: widget.appId,
+                )),
               ),
             ),
             buildButton(
               icon: Icons.group,
               label: 'My Downline',
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) =>
-                      const OptimizedDownlineTeamScreen(referredBy: 'demo-user'), // Updated to OptimizedDownlineTeamScreen
-                ),
-              ),
+              onPressed: () async {
+                final String? currentAuthToken = await FirebaseAuth.instance.currentUser?.getIdToken();
+                if (!mounted) return; // Guarded use of context
+                Navigator.push(
+                  // ignore: use_build_context_synchronously
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        DownlineTeamScreen(
+                          firebaseConfig: widget.firebaseConfig,
+                          initialAuthToken: currentAuthToken ?? '',
+                          appId: widget.appId,
+                        ),
+                  ),
+                );
+              },
             ),
             buildButton(
               icon: Icons.trending_up_rounded,
               label: 'Grow My Team',
               onPressed: () => Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => ShareScreen()),
+                MaterialPageRoute(builder: (_) => ShareScreen( // Pass required args
+                  firebaseConfig: widget.firebaseConfig,
+                  initialAuthToken: widget.initialAuthToken,
+                  appId: widget.appId,
+                )),
               ),
             ),
             buildButton(
@@ -204,7 +245,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const MessageCenterScreen(),
+                    builder: (context) => MessageCenterScreen( // Pass required args
+                      firebaseConfig: widget.firebaseConfig,
+                      initialAuthToken: widget.initialAuthToken,
+                      appId: widget.appId,
+                    ),
                   ),
                 );
               },
@@ -217,14 +262,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const NotificationsScreen(),
+                    builder: (context) => NotificationsScreen( // Pass required args
+                      firebaseConfig: widget.firebaseConfig,
+                      initialAuthToken: widget.initialAuthToken,
+                      appId: widget.appId,
+                    ),
                   ),
                 );
               },
             ),
             if (user?.role == 'user' &&
-                (user?.directSponsorCount ?? 0) >= (_directSponsorMin ?? 5) &&
-                (user?.totalTeamCount ?? 0) >= (_totalTeamMin ?? 20))
+                (user?.directSponsorCount ?? 0) >= (_directSponsorMin ?? 5) && // Corrected field name
+                (user?.totalTeamCount ?? 0) >= (_totalTeamMin ?? 20)) // Corrected field name
               buildButton(
                 icon: Icons.monetization_on,
                 label: user?.bizOppRefUrl != null
@@ -234,13 +283,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   if (user?.bizOppRefUrl != null) {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const MyBizScreen()),
+                      MaterialPageRoute(builder: (_) => MyBizScreen( // Pass required args
+                        firebaseConfig: widget.firebaseConfig,
+                        initialAuthToken: widget.initialAuthToken,
+                        appId: widget.appId,
+                      )),
                     );
                   } else {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                          builder: (_) => const JoinOpportunityScreen()),
+                          builder: (_) => JoinOpportunityScreen( // Pass required args
+                            firebaseConfig: widget.firebaseConfig,
+                            initialAuthToken: widget.initialAuthToken,
+                            appId: widget.appId,
+                          )),
                     );
                   }
                 },

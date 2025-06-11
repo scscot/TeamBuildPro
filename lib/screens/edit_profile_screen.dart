@@ -4,11 +4,22 @@ import '../models/user_model.dart';
 import '../services/firestore_service.dart';
 import '../services/session_manager.dart';
 import '../data/states_by_country.dart';
-import '../widgets/header_widgets.dart';
+import '../widgets/header_widgets.dart'; // AppHeaderWithMenu is here
+// import '../main.dart' as main_app; // Removed unused import
 
 class EditProfileScreen extends StatefulWidget {
   final UserModel user;
-  const EditProfileScreen({super.key, required this.user});
+  final Map<String, dynamic> firebaseConfig;
+  final String? initialAuthToken;
+  final String appId;
+
+  const EditProfileScreen({
+    super.key,
+    required this.user,
+    required this.firebaseConfig,
+    this.initialAuthToken,
+    required this.appId,
+  });
 
   @override
   State<EditProfileScreen> createState() => _EditProfileScreenState();
@@ -40,33 +51,28 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _selectedCountry = user.country;
     _selectedState = user.state;
 
-    // Fetch current user details to determine if they are a downline or admin
-    final currentUser = await SessionManager().getCurrentUser();
+    final currentUser = await SessionManager().getCurrentUser(); // Corrected SessionManager access
+    if (!mounted) return;
 
     if (currentUser != null) {
       if (currentUser.role == 'admin') {
-        // If current user is an admin, they can see all countries
         _allowedCountries = statesByCountry.keys.toList().cast<String>();
       } else if (currentUser.referredBy != null && currentUser.referredBy!.isNotEmpty) {
-        // If it's a downline user, find their sponsor (upline admin)
         final sponsor = await FirestoreService().getUserByReferralCode(currentUser.referredBy!);
+        if (!mounted) return;
         if (sponsor != null && sponsor.role == 'admin') {
-          // If sponsor is an admin, fetch their allowed countries
           _allowedCountries = await FirestoreService().getAdminAllowedCountries(sponsor.uid);
-          // If admin has not set any countries, assume all are allowed
+          if (!mounted) return;
           if (_allowedCountries.isEmpty) {
             _allowedCountries = statesByCountry.keys.toList().cast<String>();
           }
         } else {
-          // If no admin sponsor or sponsor is not an admin, allow all countries (default behavior)
           _allowedCountries = statesByCountry.keys.toList().cast<String>();
         }
       } else {
-        // If no referrer or not an admin, allow all countries
         _allowedCountries = statesByCountry.keys.toList().cast<String>();
       }
     } else {
-      // If current user somehow not found, fallback to all countries
       _allowedCountries = statesByCountry.keys.toList().cast<String>();
     }
 
@@ -88,6 +94,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       };
 
       await FirestoreService().updateUser(widget.user.uid, updates);
+      if (!mounted) return;
 
       final updatedUser = widget.user.copyWith(
         firstName: _firstNameController.text.trim(),
@@ -97,7 +104,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         state: _selectedState,
       );
 
-      await SessionManager().setCurrentUser(updatedUser);
+      await SessionManager().setCurrentUser(updatedUser); // Corrected SessionManager access
       if (!mounted) return;
       Navigator.of(context).pop(updatedUser);
     } catch (e) {
@@ -114,7 +121,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: const AppHeaderWithMenu(),
+      appBar: AppHeaderWithMenu(
+        firebaseConfig: widget.firebaseConfig,
+        initialAuthToken: widget.initialAuthToken,
+        appId: widget.appId,
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Form(
@@ -140,7 +151,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 decoration: const InputDecoration(labelText: 'City'),
               ),
               const SizedBox(height: 12),
-              // Use _allowedCountries to populate the dropdown
               DropdownButtonFormField<String>(
                 value: _selectedCountry,
                 hint: const Text('Select Country'),
@@ -165,15 +175,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     .toList(),
                 onChanged: (value) =>
                     setState(() => _selectedState = value),
-                // Disable state dropdown if no country is selected
-                // or if the selected country has no states
-                // or if the selected country is not in the allowed countries for which states are defined
-                // (e.g. if _selectedCountry is 'Canada' but statesByCountry['Canada'] is null or empty)
-                // This logic correctly reflects the `states` getter.
-                // Re-enabling for general usage, as the current implementation handles empty states list gracefully.
-                // The issue was showing all countries; now restricted via _allowedCountries
-                // The states dropdown should still show only states for the selected *allowed* country.
-                // No additional logic needed here, as `states` getter handles it.
               ),
               const SizedBox(height: 24),
               SizedBox(

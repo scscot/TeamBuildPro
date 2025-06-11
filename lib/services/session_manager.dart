@@ -1,87 +1,58 @@
-import 'package:shared_preferences/shared_preferences.dart';
-import '../models/user_model.dart';
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../models/user_model.dart'; // Make sure this is correctly imported
 
 class SessionManager {
-  static final SessionManager instance = SessionManager();
+  static final SessionManager _instance = SessionManager._internal();
+  static const String _userKey = 'currentUser';
+  static const String _biometricEnabledKey = 'biometricEnabled';
+  static const String _lastLogoutTimestampKey = 'lastLogoutTimestamp';
 
-  static const String _userKey = 'user';
-  static const String _biometricKey = 'biometric_enabled';
-  static const String _logoutTimeKey = 'last_logout_time';
-
-  Future<void> setCurrentUser(UserModel user) async {
-    final prefs = await SharedPreferences.getInstance();
-    final userMap = jsonEncode(user.toMap());
-    await prefs.setString(_userKey, userMap);
-    debugPrint('📂 SessionManager — User session saved with UID: ${user.uid}');
+  factory SessionManager() {
+    return _instance;
   }
+
+  SessionManager._internal();
 
   Future<UserModel?> getCurrentUser() async {
     final prefs = await SharedPreferences.getInstance();
-    final userData = prefs.getString(_userKey);
-    if (userData == null) {
-      debugPrint('⚠️ SessionManager — No session data found');
-      return null;
+    final userJson = prefs.getString(_userKey);
+    if (userJson != null) {
+      return UserModel.fromMap(jsonDecode(userJson) as Map<String, dynamic>); // Use fromMap
     }
-    try {
-      final map = jsonDecode(userData);
-      final user = UserModel.fromMap(map);
-      if (user.uid.isEmpty) {
-        debugPrint('⚠️ SessionManager — Decoded user has empty UID');
-        return null;
-      }
-      debugPrint('✅ SessionManager — User hydrated: ${user.uid}');
-      return user;
-    } catch (e) {
-      debugPrint('❌ Failed to decode user session: $e');
-      return null;
-    }
+    return null;
+  }
+
+  Future<void> setCurrentUser(UserModel user) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_userKey, jsonEncode(user.toMap())); // Use toMap
   }
 
   Future<void> clearSession() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_userKey);
-    await prefs.remove(_biometricKey);
-    await prefs.remove(_logoutTimeKey);
-    debugPrint('🧹 SessionManager — Session cleared');
+    await prefs.setInt(_lastLogoutTimestampKey, DateTime.now().millisecondsSinceEpoch);
+  }
+
+  Future<bool> getBiometricEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_biometricEnabledKey) ?? false;
   }
 
   Future<void> setBiometricEnabled(bool enabled) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_biometricKey, enabled);
-  }
-
-  Future<bool> isBiometricEnabled() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_biometricKey) ?? false;
-  }
-
-  Future<void> setLastLogoutTime(DateTime time) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_logoutTimeKey, time.toIso8601String());
-  }
-
-  Future<DateTime?> getLastLogoutTime() async {
-    final prefs = await SharedPreferences.getInstance();
-    final isoTime = prefs.getString(_logoutTimeKey);
-    return isoTime != null ? DateTime.tryParse(isoTime) : null;
+    await prefs.setBool(_biometricEnabledKey, enabled);
   }
 
   Future<bool> isLogoutCooldownActive(int minutes) async {
-    final lastLogout = await getLastLogoutTime();
-    if (lastLogout == null) return false;
-    final elapsed = DateTime.now().difference(lastLogout);
-    return elapsed.inMinutes < minutes;
-  }
+    final prefs = await SharedPreferences.getInstance();
+    final lastLogoutTimestamp = prefs.getInt(_lastLogoutTimestampKey);
+    if (lastLogoutTimestamp == null) return false;
 
-  Future<bool> getBiometricEnabled() async {
-    return isBiometricEnabled();
-  }
+    final lastLogoutDateTime = DateTime.fromMillisecondsSinceEpoch(lastLogoutTimestamp);
+    final now = DateTime.now();
+    final difference = now.difference(lastLogoutDateTime).inMinutes;
 
-  // PATCH START: alias for compatibility with FirebaseAuthService
-  Future<void> saveSession(UserModel user) async {
-    await setCurrentUser(user);
+    return difference < minutes;
   }
-  // PATCH END
 }

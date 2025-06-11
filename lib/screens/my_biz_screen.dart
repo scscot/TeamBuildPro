@@ -2,9 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../widgets/header_widgets.dart';
+// import '../models/user_model.dart'; // Needed for UserModel
 
 class MyBizScreen extends StatefulWidget {
-  const MyBizScreen({super.key});
+  // Add required parameters for consistency with current app navigation
+  final Map<String, dynamic> firebaseConfig;
+  final String? initialAuthToken;
+  final String appId;
+
+  const MyBizScreen({
+    super.key,
+    required this.firebaseConfig, // Required
+    this.initialAuthToken, // Nullable
+    required this.appId, // Required
+  });
 
   @override
   State<MyBizScreen> createState() => _MyBizScreenState();
@@ -13,7 +24,7 @@ class MyBizScreen extends StatefulWidget {
 class _MyBizScreenState extends State<MyBizScreen> {
   String? bizOpp;
   String? bizOppRefUrl;
-  Timestamp? bizJoinDate;
+  Timestamp? bizJoinDate; // Keep as Timestamp as per your original file
   bool loading = true;
 
   @override
@@ -24,24 +35,43 @@ class _MyBizScreenState extends State<MyBizScreen> {
 
   Future<void> _loadUserData() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
+    if (uid == null) {
+      debugPrint('User not authenticated for MyBizScreen.');
+      if (!mounted) return;
+      setState(() => loading = false); // Ensure loading is off
+      return;
+    }
 
     final doc =
         await FirebaseFirestore.instance.collection('users').doc(uid).get();
-    final data = doc.data();
-    if (data == null) return;
 
+    if (!mounted) return; // Guard against setState after async gap
+
+    final data = doc.data();
+    if (data == null) {
+      debugPrint('User document data is null for MyBizScreen: $uid');
+      if (mounted) setState(() => loading = false);
+      return;
+    }
+
+    // Check conditions for redirection as per original logic
+    // Using direct data access here as UserModel might not immediately have all fields
+    // if not fully populated (e.g., from an incomplete registration process).
     if (data['role'] != 'user' || data['biz_opp_ref_url'] == null) {
+      debugPrint(
+          'User role is not user or biz_opp_ref_url is null. Popping MyBizScreen.');
       if (mounted) {
-        Navigator.of(context).pop();
+        Navigator.of(context).pop(); // Go back if conditions not met
       }
       return;
     }
 
+    if (!mounted) return; // Guard before setState after conditions
+
     setState(() {
-      bizOpp = data['biz_opp'];
-      bizOppRefUrl = data['biz_opp_ref_url'];
-      bizJoinDate = data['biz_join_date'];
+      bizOpp = data['biz_opp'] as String?; // Cast to String?
+      bizOppRefUrl = data['biz_opp_ref_url'] as String?; // Cast to String?
+      bizJoinDate = data['biz_join_date'] as Timestamp?; // Cast to Timestamp?
       loading = false;
     });
   }
@@ -50,7 +80,12 @@ class _MyBizScreenState extends State<MyBizScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: const AppHeaderWithMenu(),
+      appBar: AppHeaderWithMenu(
+        // Pass required args to AppHeaderWithMenu
+        firebaseConfig: widget.firebaseConfig,
+        initialAuthToken: widget.initialAuthToken,
+        appId: widget.appId,
+      ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
@@ -98,10 +133,26 @@ class _MyBizScreenState extends State<MyBizScreen> {
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: Colors.blue.shade100),
                     ),
-                    child: const Text(
-                      "From this point forward, anyone in your TeamBuild Pro downline that completes their business opportunity registration will automatically be placed in your downline.",
-                      style: TextStyle(fontSize: 16),
+                    child: RichText(
                       textAlign: TextAlign.center,
+                      text: TextSpan(
+                        style:
+                            const TextStyle(fontSize: 16, color: Colors.black),
+                        children: [
+                          const TextSpan(
+                            text:
+                                "From this point forward, anyone in your TeamBuild Pro downline that joins ",
+                          ),
+                          TextSpan(
+                            text: bizOpp,
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          const TextSpan(
+                            text:
+                                " will automatically be placed in your downline.",
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],

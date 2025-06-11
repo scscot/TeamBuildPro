@@ -3,16 +3,24 @@
 import 'package:flutter/material.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/auth_service.dart';
-import '../services/firestore_service.dart';
 import '../services/session_manager.dart';
 import '../models/user_model.dart';
 import 'dashboard_screen.dart';
 import 'new_registration_screen.dart';
 import '../widgets/header_widgets.dart';
+// import '../main.dart' as main_app; // Removed unused import
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  final Map<String, dynamic> firebaseConfig;
+  final String appId;
+
+  const LoginScreen({
+    super.key,
+    required this.firebaseConfig,
+    required this.appId,
+  });
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -31,12 +39,12 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _tryBiometricLogin() async {
-    if (await SessionManager.instance.isLogoutCooldownActive(5)) {
+    if (await SessionManager().isLogoutCooldownActive(5)) { // Corrected SessionManager access
       debugPrint('⏳ Skipping biometric login — logout cooldown in effect');
       return;
     }
 
-    final enabled = await SessionManager.instance.getBiometricEnabled();
+    final enabled = await SessionManager().getBiometricEnabled(); // Corrected SessionManager access
     if (!enabled) return;
 
     final auth = LocalAuthentication();
@@ -56,16 +64,24 @@ class _LoginScreenState extends State<LoginScreen> {
       if (didAuthenticate) {
         final currentUser = FirebaseAuth.instance.currentUser;
         if (currentUser != null && currentUser.uid.isNotEmpty) {
-          final userData =
-              await FirestoreService().getUserData(currentUser.uid);
+          final DocumentSnapshot<Map<String, dynamic>> userDoc =
+              await FirebaseFirestore.instance.collection('users').doc(currentUser.uid).get();
 
-          if (userData != null) {
-            final fullUser =
-                UserModel.fromMap(userData).copyWith(uid: currentUser.uid);
-            await SessionManager.instance.setCurrentUser(fullUser);
+          if (userDoc.exists) {
+            final fullUser = UserModel.fromFirestore(userDoc);
+            await SessionManager().setCurrentUser(fullUser); // Corrected SessionManager access
             if (!mounted) return;
+
+            final String? initialAuthToken = await currentUser.getIdToken();
+
             Navigator.of(context).pushReplacement(
-              MaterialPageRoute(builder: (context) => const DashboardScreen()),
+              MaterialPageRoute(
+                builder: (context) => DashboardScreen(
+                  firebaseConfig: widget.firebaseConfig,
+                  appId: widget.appId,
+                  initialAuthToken: initialAuthToken,
+                ),
+              ),
             );
             return;
           }
@@ -86,10 +102,18 @@ class _LoginScreenState extends State<LoginScreen> {
         _emailController.text.trim(),
         _passwordController.text.trim(),
       );
-      await SessionManager.instance.setCurrentUser(user);
+      await SessionManager().setCurrentUser(user); // Corrected SessionManager access
       if (!mounted) return;
+
+      final String? currentAuthToken = await FirebaseAuth.instance.currentUser?.getIdToken();
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const DashboardScreen()),
+        MaterialPageRoute(
+          builder: (context) => DashboardScreen(
+            firebaseConfig: widget.firebaseConfig,
+            appId: widget.appId,
+            initialAuthToken: currentAuthToken,
+          ),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
@@ -104,7 +128,11 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: const AppHeaderWithMenu(),
+      appBar: AppHeaderWithMenu( // Pass required args
+        firebaseConfig: widget.firebaseConfig,
+        initialAuthToken: null,
+        appId: widget.appId,
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Form(
@@ -124,7 +152,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 controller: _passwordController,
                 obscureText: true,
                 decoration: const InputDecoration(labelText: 'Password'),
-                validator: (value) => value == null || value.isEmpty
+                validator: (value) => value == null || value.length < 6
                     ? 'Enter your password'
                     : null,
               ),
@@ -169,7 +197,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 onPressed: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                        builder: (context) => const NewRegistrationScreen()),
+                        builder: (context) => NewRegistrationScreen( // Pass required args
+                          firebaseConfig: widget.firebaseConfig,
+                          appId: widget.appId,
+                        )),
                   );
                 },
                 child: const Text('Create Account'),

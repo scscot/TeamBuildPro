@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../screens/profile_screen.dart';
-import '../screens/optimized_downline_team_screen.dart'; // Updated import
+import '../screens/downline_team_screen.dart'; // Corrected: hide UserModel
 import '../screens/share_screen.dart';
 import '../screens/login_screen.dart';
 import '../screens/dashboard_screen.dart';
@@ -12,10 +12,20 @@ import '../screens/join_opportunity_screen.dart';
 import '../services/session_manager.dart';
 import '../screens/new_registration_screen.dart';
 import '../screens/message_center_screen.dart';
-import '../models/user_model.dart';
+import '../models/user_model.dart'; // Canonical UserModel
+// Import main.dart to access firebaseConfig
 
 class AppHeaderWithMenu extends StatefulWidget implements PreferredSizeWidget {
-  const AppHeaderWithMenu({super.key});
+  final Map<String, dynamic> firebaseConfig;
+  final String? initialAuthToken;
+  final String appId;
+
+  const AppHeaderWithMenu({
+    super.key,
+    required this.firebaseConfig,
+    this.initialAuthToken,
+    required this.appId,
+  });
 
   @override
   Size get preferredSize => const Size.fromHeight(kToolbarHeight);
@@ -52,19 +62,21 @@ class _AppHeaderWithMenuState extends State<AppHeaderWithMenu> {
       final updatedUser = UserModel.fromFirestore(userDoc);
       final adminUid = updatedUser.uplineAdmin;
 
-      final adminSettings = await FirebaseFirestore.instance
-          .collection('admin_settings')
-          .doc(adminUid)
-          .get();
+      DocumentSnapshot<Map<String, dynamic>>? adminSettingsDoc;
+      if (adminUid != null && adminUid.isNotEmpty) {
+        adminSettingsDoc = await FirebaseFirestore.instance
+            .collection('admin_settings')
+            .doc(adminUid)
+            .get();
+      }
 
-      final int directSponsorMin =
-          adminSettings.data()?['direct_sponsor_min'] ?? 5;
-      final int totalTeamMin = adminSettings.data()?['total_team_min'] ?? 20;
+      final int directSponsorMin = adminSettingsDoc?.data()?['direct_sponsor_min'] ?? 5;
+      final int totalTeamMin = adminSettingsDoc?.data()?['total_team_min'] ?? 20;
 
       if (bizJoinDate == null &&
           directCount >= directSponsorMin &&
           teamCount >= totalTeamMin) {
-        setState(() => showJoinOpportunity = true);
+        if (mounted) setState(() => showJoinOpportunity = true); // Guarded setState
       }
     } catch (e) {
       debugPrint('❌ Failed to evaluate join opportunity eligibility: $e');
@@ -116,62 +128,86 @@ class _AppHeaderWithMenuState extends State<AppHeaderWithMenu> {
               PopupMenuButton<String>(
                 icon: const Icon(Icons.menu, color: Colors.black),
                 onSelected: (String value) async {
+                  final String? currentAuthToken = await FirebaseAuth.instance.currentUser?.getIdToken();
+                  if (!mounted) return; // Guarded use of context
+
                   switch (value) {
                     case 'dashboard':
-                      if (!mounted) return;
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                            builder: (_) => const DashboardScreen()),
+                          builder: (_) => DashboardScreen(
+                            firebaseConfig: widget.firebaseConfig,
+                            initialAuthToken: currentAuthToken,
+                            appId: widget.appId,
+                          ),
+                        ),
                       );
                       break;
                     case 'profile':
-                      if (!mounted) return;
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                            builder: (_) => const ProfileScreen()),
+                            builder: (_) => ProfileScreen( // Pass required args
+                              firebaseConfig: widget.firebaseConfig,
+                              initialAuthToken: widget.initialAuthToken,
+                              appId: widget.appId,
+                            )),
                       );
                       break;
                     case 'downline':
-                      if (!mounted) return;
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) =>
-                              const OptimizedDownlineTeamScreen(referredBy: 'demo-user'), // Updated to OptimizedDownlineTeamScreen
+                          builder: (_) => DownlineTeamScreen(
+                            firebaseConfig: widget.firebaseConfig,
+                            initialAuthToken: currentAuthToken ?? '',
+                            appId: widget.appId,
+                          ),
                         ),
                       );
                       break;
                     case 'share':
-                      if (!mounted) return;
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => ShareScreen()),
+                        MaterialPageRoute(builder: (_) => ShareScreen( // Pass required args
+                          firebaseConfig: widget.firebaseConfig,
+                          initialAuthToken: widget.initialAuthToken,
+                          appId: widget.appId,
+                        )),
                       );
                       break;
                     case 'join':
-                      if (!mounted) return;
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                            builder: (_) => const JoinOpportunityScreen()),
+                            builder: (_) => JoinOpportunityScreen( // Pass required args
+                              firebaseConfig: widget.firebaseConfig,
+                              initialAuthToken: widget.initialAuthToken,
+                              appId: widget.appId,
+                            )),
                       );
                       break;
                     case 'messages':
-                      if (!mounted) return;
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                            builder: (_) => const MessageCenterScreen()),
+                            builder: (_) => MessageCenterScreen( // Pass required args
+                              firebaseConfig: widget.firebaseConfig,
+                              initialAuthToken: widget.initialAuthToken,
+                              appId: widget.appId,
+                            )),
                       );
                       break;
                     case 'logout':
                       await SessionManager().clearSession();
                       await FirebaseAuth.instance.signOut();
-                      if (!mounted) return;
+                      if (!mounted) return; // Guarded context use
                       Navigator.of(context).pushAndRemoveUntil(
-                        MaterialPageRoute(builder: (_) => const LoginScreen()),
+                        MaterialPageRoute(builder: (_) => LoginScreen( // Pass required args
+                          firebaseConfig: widget.firebaseConfig, // Access from widget
+                          appId: widget.appId, // Access from widget
+                        )),
                         (route) => false,
                       );
                       break;

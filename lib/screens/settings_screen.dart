@@ -6,10 +6,23 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../data/states_by_country.dart';
 import 'package:multi_select_flutter/multi_select_flutter.dart';
-import '../services/subscription_service.dart';
+import '../services/subscription_service.dart'; // Ensure this service is correctly implemented
+// import '../services/session_manager.dart'; // Needed for SessionManager
+// import '../models/user_model.dart'; // Needed for UserModel
+// import 'package:flutter/foundation.dart'; // Needed for debugPrint
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
+  // Add required parameters to SettingsScreen constructor
+  final Map<String, dynamic> firebaseConfig;
+  final String? initialAuthToken;
+  final String appId;
+
+  const SettingsScreen({
+    super.key,
+    required this.firebaseConfig,
+    this.initialAuthToken,
+    required this.appId,
+  });
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -29,9 +42,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       TextEditingController();
 
   List<String> _selectedCountries = [];
-  // Removed: bool _selectAllCountries = false;
-
-  // Removed: List<String> _originalSelectedCountries = [];
   int _directSponsorMin = 5;
   int _totalTeamMin = 10;
   String? _userCountry;
@@ -57,51 +67,69 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return [...selected, ...unselected];
   }
 
+  @override
+  void initState() {
+    super.initState();
+    _loadUserSettings();
+  }
+
   Future<void> _loadUserSettings() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
+    if (uid == null) {
+      debugPrint('User not authenticated for settings screen.');
+      return;
+    }
 
-    final doc = await FirebaseFirestore.instance
-        .collection('admin_settings')
-        .doc(uid)
-        .get();
-    final data = doc.data();
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('admin_settings')
+          .doc(uid)
+          .get();
+      final data = doc.data();
 
-    if (data != null) {
-      final country = data['country'];
-      final countries = List<String>.from(data['countries'] ?? []);
-      final bizOpp = data['biz_opp'];
-      final bizRefUrl = data['biz_opp_ref_url'];
-      final sponsorMin = data['direct_sponsor_min'];
-      final teamMin = data['total_team_min'];
+      if (!mounted) return; // Guard against setState after async gap
 
-      setState(() {
-        if (country is String) {
-          _userCountry = country;
-          if (!countries.contains(country)) countries.insert(0, country);
-        }
-        _selectedCountries = countries;
-        // Removed: _originalSelectedCountries = List.from(countries);
-        _bizOpp = bizOpp;
-        _bizRefUrl = bizRefUrl;
-        _directSponsorMin = sponsorMin ?? 5;
-        _totalTeamMin = teamMin ?? 10;
-        _directSponsorMinController.text = _directSponsorMin.toString();
-        _totalTeamMinController.text = _totalTeamMin.toString();
+      if (data != null) {
+        final country = data['country'];
+        final countries = List<String>.from(data['countries'] ?? []);
+        final bizOpp = data['biz_opp'];
+        final bizRefUrl = data['biz_opp_ref_url'];
+        final sponsorMin = data['direct_sponsor_min'];
+        final teamMin = data['total_team_min'];
 
-        _bizNameController.text = _bizOpp ?? '';
-        _bizNameConfirmController.text = _bizOpp ?? '';
-        _refLinkController.text = _bizRefUrl ?? '';
-        _refLinkConfirmController.text = _refLinkController.text;
-        _isBizLocked =
-            (_bizOpp?.isNotEmpty ?? false) || (_bizRefUrl?.isNotEmpty ?? false);
+        setState(() {
+          if (country is String) {
+            _userCountry = country;
+            if (!countries.contains(country)) countries.insert(0, country);
+          }
+          _selectedCountries = countries;
+          _bizOpp = bizOpp;
+          _bizRefUrl = bizRefUrl;
+          _directSponsorMin = sponsorMin ?? 5;
+          _totalTeamMin = teamMin ?? 10;
+          _directSponsorMinController.text = _directSponsorMin.toString();
+          _totalTeamMinController.text = _totalTeamMin.toString();
 
-        // Determine if biz settings have been set
-        _isBizSettingsSet = (_bizOpp?.isNotEmpty ?? false) &&
-            (_bizRefUrl?.isNotEmpty ?? false) &&
-            (sponsorMin != null) &&
-            (teamMin != null);
-      });
+          _bizNameController.text = _bizOpp ?? '';
+          _bizNameConfirmController.text = _bizOpp ?? '';
+          _refLinkController.text = _bizRefUrl ?? '';
+          _refLinkConfirmController.text = _refLinkController.text;
+          _isBizLocked =
+              (_bizOpp?.isNotEmpty ?? false) || (_bizRefUrl?.isNotEmpty ?? false);
+
+          _isBizSettingsSet = (_bizOpp?.isNotEmpty ?? false) &&
+              (_bizRefUrl?.isNotEmpty ?? false) &&
+              (sponsorMin != null) &&
+              (teamMin != null);
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading user settings: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to load settings: $e')),
+        );
+      }
     }
   }
 
@@ -109,9 +137,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     if (!_isBizLocked && !_isBizSettingsSet) {
-      // Only validate confirmation fields if not locked and not set
       if (_bizNameController.text != _bizNameConfirmController.text ||
           _refLinkController.text != _refLinkConfirmController.text) {
+        if (!mounted) return; // Guarded context usage
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Fields must match for confirmation.')),
         );
@@ -120,12 +148,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
+    if (uid == null) {
+      if (!mounted) return; // Guarded context usage
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('User not authenticated.')),
+      );
+      return;
+    }
 
     final status = await SubscriptionService.checkAdminSubscriptionStatus(uid);
     final isActive = status['isActive'] == true;
 
     if (!isActive) {
+      if (!mounted) return; // Guarded context usage
       showDialog(
         context: context,
         builder: (_) => AlertDialog(
@@ -140,6 +175,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
+                // Ensure /upgrade route is defined in your MaterialApp
                 Navigator.pushNamed(context, '/upgrade');
               },
               child: const Text('Upgrade Now'),
@@ -153,7 +189,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final settingsRef =
         FirebaseFirestore.instance.collection('admin_settings').doc(uid);
 
-    // Only update these fields if they haven't been set yet
     if (!_isBizSettingsSet) {
       await settingsRef.set(
           {
@@ -163,36 +198,59 @@ class _SettingsScreenState extends State<SettingsScreen> {
             'total_team_min': _totalTeamMin,
             'countries': _selectedCountries,
           },
-          SetOptions(
-              merge: true)); // Use merge to avoid overwriting other fields
+          SetOptions(merge: true));
     } else {
       await settingsRef.set({
         'countries': _selectedCountries,
       }, SetOptions(merge: true));
     }
 
+    // Re-load settings to update UI with latest saved values
     await _loadUserSettings();
-    Scrollable.ensureVisible(_formKey.currentContext ?? context,
-        duration: const Duration(milliseconds: 300));
+    
+    // Ensure context is still mounted before using Scrollable.ensureVisible
+    if (!mounted) return;
 
+    // Use ensureVisible on a specific child of the Scrollable, not context directly
+    // This often means wrapping the form or a part of it in a Builder and using that context
+    // For simplicity, directly using context here, but aware of the potential edge case.
+    Scrollable.ensureVisible(
+      _formKey.currentContext!, // Using ! because validate() means form is valid, so context should exist
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
+
+    if (!mounted) return; // Guarded context usage
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Settings saved successfully.')),
     );
   }
 
   @override
-  void initState() {
-    super.initState();
-    _loadUserSettings();
+  void dispose() {
+    _directSponsorMinController.dispose();
+    _totalTeamMinController.dispose();
+    _bizNameController.dispose();
+    _bizNameConfirmController.dispose();
+    _refLinkController.dispose();
+    _refLinkConfirmController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    // You'll need to pass firebaseConfig, initialAuthToken, and appId to the AppHeaderWithMenu
+    // when using it in DashboardScreen.
     return Scaffold(
-      appBar: const AppHeaderWithMenu(),
+      appBar: AppHeaderWithMenu(
+        firebaseConfig: widget.firebaseConfig, // Pass required args
+        initialAuthToken: widget.initialAuthToken,
+        appId: widget.appId,
+      ),
       backgroundColor: Colors.white,
       body: SingleChildScrollView(
-        controller: ScrollController(),
+        // Added controller for Scrollable.ensureVisible, can be removed if not used
+        // controller: ScrollController(),
         padding: const EdgeInsets.all(16),
         child: Form(
           key: _formKey,
