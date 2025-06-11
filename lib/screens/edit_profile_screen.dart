@@ -5,7 +5,8 @@ import '../services/firestore_service.dart';
 import '../services/session_manager.dart';
 import '../data/states_by_country.dart';
 import '../widgets/header_widgets.dart'; // AppHeaderWithMenu is here
-// import '../main.dart' as main_app; // Removed unused import
+import 'package:cloud_firestore/cloud_firestore.dart'; // Needed for Firestore
+import 'package:firebase_auth/firebase_auth.dart'; // Needed to get current user UID
 
 class EditProfileScreen extends StatefulWidget {
   final UserModel user;
@@ -35,6 +36,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   bool _isSaving = false;
 
   List<String> _allowedCountries = []; // Holds countries allowed by admin
+
   List<String> get states => statesByCountry[_selectedCountry] ?? [];
 
   @override
@@ -44,40 +46,114 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> _loadProfileData() async {
-    final user = widget.user;
+    final user = widget.user; // This is the user whose profile is being edited
     _firstNameController.text = user.firstName ?? '';
     _lastNameController.text = user.lastName ?? '';
     _cityController.text = user.city ?? '';
     _selectedCountry = user.country;
     _selectedState = user.state;
 
-    final currentUser = await SessionManager().getCurrentUser(); // Corrected SessionManager access
-    if (!mounted) return;
-
-    if (currentUser != null) {
-      if (currentUser.role == 'admin') {
-        _allowedCountries = statesByCountry.keys.toList().cast<String>();
-      } else if (currentUser.referredBy != null && currentUser.referredBy!.isNotEmpty) {
-        final sponsor = await FirestoreService().getUserByReferralCode(currentUser.referredBy!);
-        if (!mounted) return;
-        if (sponsor != null && sponsor.role == 'admin') {
-          _allowedCountries = await FirestoreService().getAdminAllowedCountries(sponsor.uid);
-          if (!mounted) return;
-          if (_allowedCountries.isEmpty) {
-            _allowedCountries = statesByCountry.keys.toList().cast<String>();
-          }
-        } else {
-          _allowedCountries = statesByCountry.keys.toList().cast<String>();
-        }
-      } else {
-        _allowedCountries = statesByCountry.keys.toList().cast<String>();
+    // --- NEW LOGIC: Fetch allowed countries based on current user's upline_admin ---
+    final currentUserFirebase = FirebaseAuth.instance.currentUser;
+    if (currentUserFirebase == null) {
+      debugPrint(
+          'EditProfileScreen: No authenticated user. Cannot load dynamic allowed countries.');
+      if (mounted) {
+        setState(() => _allowedCountries =
+            statesByCountry.keys.toList().cast<String>()); // Fallback
       }
-    } else {
-      _allowedCountries = statesByCountry.keys.toList().cast<String>();
+      return;
     }
 
+    try {
+      // Get the full UserModel for the authenticated user to find their uplineAdmin
+      final currentUserDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUserFirebase.uid)
+          .get();
+      if (!mounted) return;
+
+      if (!currentUserDoc.exists) {
+        debugPrint(
+            'EditProfileScreen: Current authenticated user document not found. Falling back to all countries.');
+        if (mounted) {
+          setState(() => _allowedCountries =
+              statesByCountry.keys.toList().cast<String>()); // Fallback
+        }
+        return;
+      }
+
+      final currentUserModel = UserModel.fromFirestore(currentUserDoc);
+      String? adminUidToFetchSettings;
+
+      // Determine which admin's settings to use
+      if (currentUserModel.role == 'admin') {
+        adminUidToFetchSettings = currentUserModel
+            .uid; // If current user is admin, use their own UID for settings
+      } else if (currentUserModel.uplineAdmin != null &&
+          currentUserModel.uplineAdmin!.isNotEmpty) {
+        adminUidToFetchSettings =
+            currentUserModel.uplineAdmin; // Use their assigned upline_admin
+      } else {
+        debugPrint(
+            'EditProfileScreen: User is not admin and has no upline_admin. Falling back to all countries.');
+        if (mounted) {
+          setState(() => _allowedCountries =
+              statesByCountry.keys.toList().cast<String>()); // Fallback
+        }
+        return;
+      }
+
+      // Fetch the admin settings document
+      DocumentSnapshot<Map<String, dynamic>>? adminSettingsDoc;
+      if (adminUidToFetchSettings != null &&
+          adminUidToFetchSettings.isNotEmpty) {
+        adminSettingsDoc = await FirebaseFirestore.instance
+            .collection('admin_settings')
+            .doc(adminUidToFetchSettings)
+            .get();
+      }
+
+      if (!mounted) return; // Guard against setState after async gap
+
+      if (adminSettingsDoc != null && adminSettingsDoc.exists) {
+        final data = adminSettingsDoc.data();
+        if (data != null && data['countries'] is List) {
+          setState(() {
+            _allowedCountries = List<String>.from(data['countries']);
+            debugPrint(
+                'Allowed countries loaded from admin settings ($adminUidToFetchSettings): $_allowedCountries');
+          });
+        } else {
+          debugPrint(
+              'Admin settings document ($adminUidToFetchSettings) exists but "countries" field is missing or not a List. Falling back to all countries.');
+          if (mounted) {
+            setState(() => _allowedCountries = statesByCountry.keys
+                .toList()
+                .cast<String>()); // Fallback to all countries
+          }
+        }
+      } else {
+        debugPrint(
+            'Admin settings document for $adminUidToFetchSettings not found. Falling back to all countries.');
+        if (mounted) {
+          setState(() => _allowedCountries = statesByCountry.keys
+              .toList()
+              .cast<String>()); // Fallback to all countries
+        }
+      }
+    } catch (e) {
+      debugPrint(
+          'EditProfileScreen: Error fetching admin allowed countries: $e');
+      if (!mounted) return;
+      setState(() => _allowedCountries = statesByCountry.keys
+          .toList()
+          .cast<String>()); // Fallback to all countries on error
+    }
+
+    // Retain this setState to ensure the dropdowns re-render with selected values and loaded countries
     if (!mounted) return;
-    setState(() {}); // Rebuild to update dropdown with filtered countries
+    setState(() {});
   }
 
   Future<void> _saveProfile() async {
@@ -104,7 +180,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         state: _selectedState,
       );
 
-      await SessionManager().setCurrentUser(updatedUser); // Corrected SessionManager access
+      await SessionManager().setCurrentUser(updatedUser);
       if (!mounted) return;
       Navigator.of(context).pop(updatedUser);
     } catch (e) {
@@ -167,14 +243,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 value: _selectedState,
-                decoration:
-                    const InputDecoration(labelText: 'State/Province'),
+                decoration: const InputDecoration(labelText: 'State/Province'),
                 items: states
                     .map((state) =>
                         DropdownMenuItem(value: state, child: Text(state)))
                     .toList(),
-                onChanged: (value) =>
-                    setState(() => _selectedState = value),
+                onChanged: (value) => setState(() => _selectedState = value),
               ),
               const SizedBox(height: 24),
               SizedBox(

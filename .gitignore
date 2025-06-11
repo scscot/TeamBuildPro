@@ -68,10 +68,9 @@ build/
 .flutter-plugins
 .flutter-plugins-dependencies
 .flutter-plugins-generated
+flutter_*
 # Generated API documentation for Dart packages
 **/doc/api/
-# Specific Flutter-generated image files (if not intended for tracking)
-flutter_*.png # e.g., flutter_logo.png if auto-generated
 # Flutter generated metadata
 .metadata
 
