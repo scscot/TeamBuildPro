@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:country_picker/country_picker.dart';
-import '../widgets/header_widgets.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../services/subscription_service.dart';
+import '../config/app_constants.dart';
 import '../models/user_model.dart';
+import '../services/subscription_service.dart';
+import '../widgets/header_widgets.dart';
 
 class SettingsScreen extends StatefulWidget {
   final Map<String, dynamic> firebaseConfig;
@@ -23,10 +24,6 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  final TextEditingController _directSponsorMinController =
-      TextEditingController();
-  final TextEditingController _totalTeamMinController = TextEditingController();
-
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _bizNameController = TextEditingController();
   final TextEditingController _bizNameConfirmController =
@@ -36,8 +33,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       TextEditingController();
 
   List<String> _selectedCountries = [];
-  int _directSponsorMin = 5;
-  int _totalTeamMin = 10;
   String? _bizOpp;
   String? _bizRefUrl;
   String? _adminFirstName;
@@ -144,25 +139,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
         if (data != null) {
           final bizOppFromFirestore = data['biz_opp'];
           final bizRefUrlFromFirestore = data['biz_opp_ref_url'];
-          final sponsorMinFromFirestore = data['direct_sponsor_min'];
-          final teamMinFromFirestore = data['total_team_min'];
           final countriesFromFirestore =
               List<String>.from(data['countries'] ?? []);
 
           bool settingsAreSet = (bizOppFromFirestore?.isNotEmpty ?? false) &&
               (bizRefUrlFromFirestore?.isNotEmpty ?? false) &&
-              (sponsorMinFromFirestore != null) &&
-              (teamMinFromFirestore != null) &&
               (countriesFromFirestore.isNotEmpty);
 
           _selectedCountries = countriesFromFirestore;
           _bizOpp = bizOppFromFirestore;
           _bizRefUrl = bizRefUrlFromFirestore;
-          _directSponsorMin = sponsorMinFromFirestore ?? 5;
-          _totalTeamMin = teamMinFromFirestore ?? 10;
-
-          _directSponsorMinController.text = _directSponsorMin.toString();
-          _totalTeamMinController.text = _totalTeamMin.toString();
           _bizNameController.text = _bizOpp ?? '';
           _bizNameConfirmController.text = _bizOpp ?? '';
           _refLinkController.text = _bizRefUrl ?? '';
@@ -261,8 +247,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await settingsRef.set({
         'biz_opp': _bizNameController.text.trim(),
         'biz_opp_ref_url': _refLinkController.text.trim(),
-        'direct_sponsor_min': _directSponsorMin,
-        'total_team_min': _totalTeamMin,
         'countries': _selectedCountries,
       }, SetOptions(merge: true));
 
@@ -292,8 +276,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   void dispose() {
-    _directSponsorMinController.dispose();
-    _totalTeamMinController.dispose();
     _bizNameController.dispose();
     _bizNameConfirmController.dispose();
     _refLinkController.dispose();
@@ -334,46 +316,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            RichText(
-              textAlign: TextAlign.start,
-              text: TextSpan(
-                style: DefaultTextStyle.of(context)
-                    .style
-                    .copyWith(fontSize: 14, color: Colors.black87),
+            Text.rich(
+              TextSpan(
                 children: [
                   TextSpan(
                     text: "Hello ${_adminFirstName ?? 'Admin'}!\n\n",
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  TextSpan(
-                    text: "Welcome to your Business Opportunity Settings.\n\n",
-                    style: const TextStyle(fontWeight: FontWeight.normal),
                   ),
                   const TextSpan(
-                    text: "Please review these settings carefully, as ",
-                    style: TextStyle(fontWeight: FontWeight.normal),
+                    text: "Carefully complete and review your settings, as ",
                   ),
                   TextSpan(
-                    text: "once submitted, they cannot be changed.",
+                    text: "once submitted, they cannot be changed. ",
                     style: const TextStyle(
                         fontWeight: FontWeight.bold, color: Colors.red),
                   ),
                   const TextSpan(
                     text:
-                        " These values will apply to every member of your downline team, ensuring the highest level of integrity, consistency, and fairness across your organization. Your thoughtful setup here is key to their long-term success.",
-                    style: TextStyle(fontWeight: FontWeight.normal),
+                        "These values will apply to every member of your downline team, ensuring the highest level of integrity, consistency, and fairness across your organization.",
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 10),
+            const Divider(
+              color: Colors.blue,
+              thickness: 2,
+            ),
+            const SizedBox(height: 10),
             TextFormField(
               controller: _bizNameController,
               readOnly: _isBizLocked,
               maxLines: null,
               keyboardType: TextInputType.text,
               decoration: InputDecoration(
-                labelText: 'Business Opportunity Name',
+                labelText: 'Your Business Opportunity Name',
                 filled: _isBizLocked,
                 fillColor: _isBizLocked ? Colors.grey[200] : null,
               ),
@@ -498,33 +474,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 20),
-            Row(
-              // Wrap the Text.rich widget with a Row
-              children: [
-                Expanded(
-                  // And then with an Expanded widget
-                  child: Text.rich(
-                    TextSpan(
-                      style: DefaultTextStyle.of(context)
-                          .style
-                          .copyWith(fontSize: 14),
-                      children: [
-                        const TextSpan(
-                            text:
-                                "When your downline members meet your eligibility criteria, we automatically invite them to join your "),
-                        TextSpan(
-                          text: _bizOpp ?? 'business opportunity',
-                          style: const TextStyle(
-                              color: Colors.blue, fontWeight: FontWeight.w500),
-                        ),
-                        const TextSpan(
-                            text:
-                                " team — with their pre-built TeamBuild Pro downlines ready to follow."),
-                      ],
-                    ),
+            Text.rich(
+              TextSpan(
+                style:
+                    DefaultTextStyle.of(context).style.copyWith(fontSize: 14),
+                children: [
+                  const TextSpan(
+                      text:
+                          "When your downline members meet your eligibility criteria, we automatically invite them to join your "),
+                  TextSpan(
+                    text: _bizOpp ?? 'business opportunity',
+                    style: const TextStyle(
+                        color: Colors.blue, fontWeight: FontWeight.w500),
                   ),
-                ),
-              ],
+                  const TextSpan(
+                      text:
+                          " team — with their pre-built TeamBuild Pro downlines ready to follow."),
+                ],
+              ),
             ),
             const SizedBox(height: 24),
             const Text(
@@ -532,53 +499,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    controller: _directSponsorMinController,
-                    readOnly: _isBizSettingsSet,
-                    decoration: InputDecoration(
-                      labelText: 'Direct Sponsors',
-                      filled: _isBizSettingsSet,
-                      fillColor: _isBizSettingsSet ? Colors.grey[200] : null,
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 14),
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                    ),
-                    keyboardType: TextInputType.number,
-                    onChanged: _isBizSettingsSet
-                        ? null
-                        : (value) {
-                            _directSponsorMin = int.tryParse(value) ?? 5;
-                          },
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: TextFormField(
-                    controller: _totalTeamMinController,
-                    readOnly: _isBizSettingsSet,
-                    decoration: InputDecoration(
-                      labelText: 'Total Team Members',
-                      filled: _isBizSettingsSet,
-                      fillColor: _isBizSettingsSet ? Colors.grey[200] : null,
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 14),
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                    ),
-                    keyboardType: TextInputType.number,
-                    onChanged: _isBizSettingsSet
-                        ? null
-                        : (value) {
-                            _totalTeamMin = int.tryParse(value) ?? 10;
-                          },
-                  ),
-                ),
-              ],
-            ),
             const SizedBox(height: 24),
             Center(
               child: Padding(
@@ -604,7 +524,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 24),
-          // --- REVISED UI for Business Info ---
           Card(
             elevation: 2,
             shape:
@@ -695,18 +614,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 12),
-          // --- REVISED UI for Eligibility Requirements ---
           Row(
             children: [
               _buildMetricCard(
                 icon: Icons.people,
-                value: _directSponsorMin.toString(),
+                value: AppConstants.projectWideDirectSponsorMin.toString(),
                 label: 'Direct Sponsors',
               ),
               const SizedBox(width: 16),
               _buildMetricCard(
                 icon: Icons.groups,
-                value: _totalTeamMin.toString(),
+                value: AppConstants.projectWideTotalTeamMin.toString(),
                 label: 'Total Team Members',
               ),
             ],
@@ -717,7 +635,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  // --- NEW Helper Widget for Metric Cards ---
   Widget _buildMetricCard({
     required IconData icon,
     required String value,
@@ -750,8 +667,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
   }
-
-  // --- OLD _buildInfoRow has been removed ---
 
   String _countryCodeToEmoji(String countryCode) {
     if (countryCode.length != 2) return '';

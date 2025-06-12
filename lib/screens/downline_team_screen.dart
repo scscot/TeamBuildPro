@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_model.dart';
 import '../screens/member_detail_screen.dart';
 import '../widgets/header_widgets.dart';
+import '../config/app_constants.dart';
 
 enum JoinWindow {
   none,
@@ -38,7 +39,6 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
   final currentUserAuth = FirebaseAuth.instance.currentUser;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-  // Timer? _debounce; // REMOVED: No longer needed as search is not live.
   int levelOffset = 0;
   List<UserModel> _fullDownlineUsers = [];
   Map<JoinWindow, int> downlineCounts = {
@@ -60,7 +60,6 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
 
   @override
   void dispose() {
-    // _debounce?.cancel(); // REMOVED: No longer needed.
     _searchController.dispose();
     _currentUserDocSubscription?.cancel();
     super.dispose();
@@ -69,7 +68,9 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
   Future<void> _fetchAndListenToCurrentUser() async {
     if (currentUserAuth == null) {
       debugPrint('No authenticated user found for downline screen.');
-      if (mounted) setState(() => isLoading = false);
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
       return;
     }
 
@@ -86,11 +87,15 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
       } else {
         debugPrint(
             'Current user document does not exist for downline screen: ${currentUserAuth!.uid}');
-        if (mounted) setState(() => isLoading = false);
+        if (mounted) {
+          setState(() => isLoading = false);
+        }
       }
     }, onError: (error) {
       debugPrint('Error listening to current user doc: $error');
-      if (mounted) setState(() => isLoading = false);
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
     });
   }
 
@@ -106,7 +111,9 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
 
     if (_currentUserModel == null || _currentUserModel!.uid.isEmpty) {
       debugPrint('Current user model is not available.');
-      if (mounted) setState(() => isLoading = false);
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
       return;
     }
 
@@ -229,7 +236,9 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
     } catch (e) {
       debugPrint('Error loading downline: $e');
     } finally {
-      if (mounted) setState(() => isLoading = false);
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
     }
   }
 
@@ -261,8 +270,9 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
     if (!settingsDoc.exists) return [];
 
     final settings = settingsDoc.data();
-    final directMin = settings?['direct_sponsor_min'] ?? 1;
-    final totalMin = settings?['total_team_min'] ?? 1;
+    // FIXED: 'const' changed to 'final'.
+    final int directMin = AppConstants.projectWideDirectSponsorMin;
+    final int totalMin = AppConstants.projectWideTotalTeamMin;
     final allowedCountries = List<String>.from(settings?['countries'] ?? []);
 
     final querySnapshot = await FirebaseFirestore.instance
@@ -321,8 +331,7 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
                         setState(() {
                           selectedJoinWindow = value;
                           _searchQuery = '';
-                          _searchController
-                              .clear(); // Also clear the text field
+                          _searchController.clear();
                         });
                         fetchDownline();
                       }
@@ -345,8 +354,6 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
                         prefixIcon: Icon(Icons.search),
                         border: OutlineInputBorder(),
                       ),
-                      // REMOVED: The onChanged callback is no longer needed for live search.
-                      // onChanged: (value) { ... },
                       onSubmitted: (value) {
                         if (!mounted) return;
                         setState(() => _searchQuery = value);

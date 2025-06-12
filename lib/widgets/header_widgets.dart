@@ -3,8 +3,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:ultimatefix/screens/notifications_screen.dart';
 import '../screens/profile_screen.dart';
-import '../screens/downline_team_screen.dart'; // Corrected: hide UserModel
+import '../screens/downline_team_screen.dart';
 import '../screens/share_screen.dart';
 import '../screens/login_screen.dart';
 import '../screens/dashboard_screen.dart';
@@ -12,8 +13,7 @@ import '../screens/join_opportunity_screen.dart';
 import '../services/session_manager.dart';
 import '../screens/new_registration_screen.dart';
 import '../screens/message_center_screen.dart';
-import '../models/user_model.dart'; // Canonical UserModel
-// Import main.dart to access firebaseConfig
+import '../config/app_constants.dart';
 
 class AppHeaderWithMenu extends StatefulWidget implements PreferredSizeWidget {
   final Map<String, dynamic> firebaseConfig;
@@ -59,24 +59,16 @@ class _AppHeaderWithMenuState extends State<AppHeaderWithMenu> {
       final directCount = data['direct_sponsor_count'] ?? 0;
       final teamCount = data['total_team_count'] ?? 0;
 
-      final updatedUser = UserModel.fromFirestore(userDoc);
-      final adminUid = updatedUser.uplineAdmin;
-
-      DocumentSnapshot<Map<String, dynamic>>? adminSettingsDoc;
-      if (adminUid != null && adminUid.isNotEmpty) {
-        adminSettingsDoc = await FirebaseFirestore.instance
-            .collection('admin_settings')
-            .doc(adminUid)
-            .get();
-      }
-
-      final int directSponsorMin = adminSettingsDoc?.data()?['direct_sponsor_min'] ?? 5;
-      final int totalTeamMin = adminSettingsDoc?.data()?['total_team_min'] ?? 20;
+      // FIXED: 'const' changed to 'final'.
+      final int directSponsorMin = AppConstants.projectWideDirectSponsorMin;
+      final int totalTeamMin = AppConstants.projectWideTotalTeamMin;
 
       if (bizJoinDate == null &&
           directCount >= directSponsorMin &&
           teamCount >= totalTeamMin) {
-        if (mounted) setState(() => showJoinOpportunity = true); // Guarded setState
+        if (mounted) {
+          setState(() => showJoinOpportunity = true);
+        }
       }
     } catch (e) {
       debugPrint('❌ Failed to evaluate join opportunity eligibility: $e');
@@ -128,8 +120,9 @@ class _AppHeaderWithMenuState extends State<AppHeaderWithMenu> {
               PopupMenuButton<String>(
                 icon: const Icon(Icons.menu, color: Colors.black),
                 onSelected: (String value) async {
-                  final String? currentAuthToken = await FirebaseAuth.instance.currentUser?.getIdToken();
-                  if (!mounted) return; // Guarded use of context
+                  final String? currentAuthToken =
+                      await FirebaseAuth.instance.currentUser?.getIdToken();
+                  if (!mounted) return;
 
                   switch (value) {
                     case 'dashboard':
@@ -148,11 +141,11 @@ class _AppHeaderWithMenuState extends State<AppHeaderWithMenu> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                            builder: (_) => ProfileScreen( // Pass required args
-                              firebaseConfig: widget.firebaseConfig,
-                              initialAuthToken: widget.initialAuthToken,
-                              appId: widget.appId,
-                            )),
+                            builder: (_) => ProfileScreen(
+                                  firebaseConfig: widget.firebaseConfig,
+                                  initialAuthToken: widget.initialAuthToken,
+                                  appId: widget.appId,
+                                )),
                       );
                       break;
                     case 'downline':
@@ -170,44 +163,57 @@ class _AppHeaderWithMenuState extends State<AppHeaderWithMenu> {
                     case 'share':
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => ShareScreen( // Pass required args
-                          firebaseConfig: widget.firebaseConfig,
-                          initialAuthToken: widget.initialAuthToken,
-                          appId: widget.appId,
-                        )),
+                        MaterialPageRoute(
+                            builder: (_) => ShareScreen(
+                                  firebaseConfig: widget.firebaseConfig,
+                                  initialAuthToken: widget.initialAuthToken,
+                                  appId: widget.appId,
+                                )),
                       );
                       break;
                     case 'join':
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                            builder: (_) => JoinOpportunityScreen( // Pass required args
-                              firebaseConfig: widget.firebaseConfig,
-                              initialAuthToken: widget.initialAuthToken,
-                              appId: widget.appId,
-                            )),
+                            builder: (_) => JoinOpportunityScreen(
+                                  firebaseConfig: widget.firebaseConfig,
+                                  initialAuthToken: widget.initialAuthToken,
+                                  appId: widget.appId,
+                                )),
                       );
                       break;
                     case 'messages':
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                            builder: (_) => MessageCenterScreen( // Pass required args
-                              firebaseConfig: widget.firebaseConfig,
-                              initialAuthToken: widget.initialAuthToken,
-                              appId: widget.appId,
-                            )),
+                            builder: (_) => MessageCenterScreen(
+                                  firebaseConfig: widget.firebaseConfig,
+                                  initialAuthToken: widget.initialAuthToken,
+                                  appId: widget.appId,
+                                )),
+                      );
+                      break;
+                    case 'notifications':
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => NotificationsScreen(
+                                  firebaseConfig: widget.firebaseConfig,
+                                  initialAuthToken: widget.initialAuthToken,
+                                  appId: widget.appId,
+                                )),
                       );
                       break;
                     case 'logout':
                       await SessionManager().clearSession();
                       await FirebaseAuth.instance.signOut();
-                      if (!mounted) return; // Guarded context use
+                      if (!mounted) return;
                       Navigator.of(context).pushAndRemoveUntil(
-                        MaterialPageRoute(builder: (_) => LoginScreen( // Pass required args
-                          firebaseConfig: widget.firebaseConfig, // Access from widget
-                          appId: widget.appId, // Access from widget
-                        )),
+                        MaterialPageRoute(
+                            builder: (_) => LoginScreen(
+                                  firebaseConfig: widget.firebaseConfig,
+                                  appId: widget.appId,
+                                )),
                         (route) => false,
                       );
                       break;
@@ -224,20 +230,24 @@ class _AppHeaderWithMenuState extends State<AppHeaderWithMenu> {
                     child: Text('Dashboard'),
                   ),
                   const PopupMenuItem<String>(
-                    value: 'profile',
-                    child: Text('My Profile'),
-                  ),
-                  const PopupMenuItem<String>(
                     value: 'downline',
                     child: Text('My Downline'),
+                  ),
+                  const PopupMenuItem<String>(
+                    value: 'share',
+                    child: Text('Grow My Team'),
                   ),
                   const PopupMenuItem<String>(
                     value: 'messages',
                     child: Text('Messages Center'),
                   ),
                   const PopupMenuItem<String>(
-                    value: 'share',
-                    child: Text('Share'),
+                    value: 'notifications',
+                    child: Text('Notifications'),
+                  ),
+                  const PopupMenuItem<String>(
+                    value: 'profile',
+                    child: Text('My Profile'),
                   ),
                   const PopupMenuItem<String>(
                     value: 'logout',
