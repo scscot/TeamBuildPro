@@ -1,14 +1,13 @@
-// ignore_for_file: use_build_context_synchronously
+// ignore_for_file: use_build_context_synchronously, unnecessary_null_comparison
 
 import 'package:flutter/material.dart';
+import 'package:country_picker/country_picker.dart'; // Import country_picker package
 import '../widgets/header_widgets.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../data/states_by_country.dart';
-import 'package:multi_select_flutter/multi_select_flutter.dart';
+// import '../data/states_by_country.dart';
 import '../services/subscription_service.dart';
 import '../models/user_model.dart';
-// Needed for debugPrint
 
 class SettingsScreen extends StatefulWidget {
   final Map<String, dynamic> firebaseConfig;
@@ -44,24 +43,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int _totalTeamMin = 10;
   String? _bizOpp; // Business Opportunity Name
   String? _bizRefUrl; // Business Opportunity Referral URL
-  bool _isBizLocked = false;
-  bool _isBizSettingsSet = false;
+  String? _adminFirstName; // Holds the admin's first name from Firestore
+  bool _isBizLocked =
+      false; // Indicates if bizOpp and bizRefUrl fields are locked for editing
+  bool _isBizSettingsSet =
+      false; // Indicates if bizOpp settings (name, url, mins) have been initially set
 
+  // This map is still required to render flags in the display-only view after saving.
+  // Ensure it is populated with all countries you intend to support.
   static const Map<String, String> _countryNameToCode = {
     'United States': 'US',
     'Canada': 'CA',
     'Brazil': 'BR',
     'Albania': 'AL',
+    'Germany': 'DE',
+    'United Kingdom': 'GB',
+    'Australia': 'AU',
+    'Mexico': 'MX',
   };
-
-  List<String> get allCountries {
-    final fullList = statesByCountry.keys.toList();
-    final selected = List<String>.from(_selectedCountries);
-    final unselected = fullList.where((c) => !selected.contains(c)).toList();
-    selected.sort();
-    unselected.sort();
-    return [...selected, ...unselected];
-  }
 
   @override
   void initState() {
@@ -69,50 +68,83 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _loadUserSettings();
   }
 
+  // Implemented function to use the country_picker package
+  void _openCountryPicker() {
+    showCountryPicker(
+      context: context,
+      showPhoneCode: false, // You can customize what is shown
+      onSelect: (Country country) {
+        // Update state with the selected country
+        setState(() {
+          // Add the country only if it's not already in the list
+          if (!_selectedCountries.contains(country.name)) {
+            _selectedCountries.add(country.name);
+            _selectedCountries.sort(); // Keep the list sorted alphabetically
+          }
+        });
+      },
+    );
+  }
+
   Future<void> _loadUserSettings() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
-      debugPrint(
-          'SettingsScreen: User not authenticated. Showing editable form.');
-      if (mounted) {
-        setState(() => _isBizSettingsSet = false);
-      }
+      debugPrint('SettingsScreen: User not authenticated.');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Authentication required.')),
+          );
+          Navigator.of(context).pop();
+        }
+      });
       return;
     }
 
     try {
       final currentUserDoc =
           await FirebaseFirestore.instance.collection('users').doc(uid).get();
+
       if (!mounted) return;
+
       if (!currentUserDoc.exists) {
-        debugPrint(
-            'SettingsScreen: Current authenticated user document not found. Showing editable form.');
-        if (mounted) setState(() => _isBizSettingsSet = false);
+        debugPrint('SettingsScreen: Current user document not found.');
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('User profile not found.')),
+            );
+            Navigator.of(context).pop();
+          }
+        });
         return;
       }
+
       final currentUserModel = UserModel.fromFirestore(currentUserDoc);
 
-      String? adminUidToFetchSettings;
-      if (currentUserModel.role == 'admin') {
-        adminUidToFetchSettings = currentUserModel.uid;
-      } else if (currentUserModel.uplineAdmin != null &&
-          currentUserModel.uplineAdmin!.isNotEmpty) {
-        adminUidToFetchSettings = currentUserModel.uplineAdmin;
-      } else {
-        debugPrint(
-            'SettingsScreen: User is not admin and has no upline_admin. Falling back to default admin ID.');
-        adminUidToFetchSettings =
-            "KJ8uFnlhKhWgBa4NVcwT"; // Your primary admin UID from generateUsers.js
+      if (currentUserModel.role != 'admin') {
+        debugPrint('SettingsScreen: Access Denied. User is not an admin.');
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                  content: Text('Access Denied: Admin role required.')),
+            );
+            Navigator.of(context).pop();
+          }
+        });
+        return;
       }
 
-      DocumentSnapshot<Map<String, dynamic>>? adminSettingsDoc;
-      if (adminUidToFetchSettings != null &&
-          adminUidToFetchSettings.isNotEmpty) {
-        adminSettingsDoc = await FirebaseFirestore.instance
-            .collection('admin_settings')
-            .doc(adminUidToFetchSettings)
-            .get();
-      }
+      _adminFirstName = currentUserModel.firstName;
+
+      String adminUidToFetchSettings = currentUserModel.uid;
+
+      DocumentSnapshot<Map<String, dynamic>>? adminSettingsDoc =
+          await FirebaseFirestore.instance
+              .collection('admin_settings')
+              .doc(adminUidToFetchSettings)
+              .get();
 
       if (!mounted) return;
 
@@ -126,27 +158,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           final countriesFromFirestore =
               List<String>.from(data['countries'] ?? []);
 
-          // --- Debugging Logs for _isBizSettingsSet ---
-          debugPrint('SettingsScreen: Fetched biz_opp: $bizOppFromFirestore');
-          debugPrint(
-              'SettingsScreen: Fetched biz_opp_ref_url: $bizRefUrlFromFirestore');
-          debugPrint(
-              'SettingsScreen: Fetched direct_sponsor_min: $sponsorMinFromFirestore');
-          debugPrint(
-              'SettingsScreen: Fetched total_team_min: $teamMinFromFirestore');
-          debugPrint(
-              'SettingsScreen: Is bizOpp from Firestore empty? ${bizOppFromFirestore?.isEmpty ?? true}');
-          debugPrint(
-              'SettingsScreen: Is bizRefUrl from Firestore empty? ${bizRefUrlFromFirestore?.isEmpty ?? true}');
-
-          // Determine _isBizSettingsSet based on actual values from Firestore
           bool settingsAreSet = (bizOppFromFirestore?.isNotEmpty ?? false) &&
               (bizRefUrlFromFirestore?.isNotEmpty ?? false) &&
               (sponsorMinFromFirestore != null) &&
               (teamMinFromFirestore != null);
-
-          debugPrint(
-              'SettingsScreen: Calculated _isBizSettingsSet: $settingsAreSet');
 
           setState(() {
             _selectedCountries = countriesFromFirestore;
@@ -162,23 +177,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _refLinkController.text = _bizRefUrl ?? '';
             _refLinkConfirmController.text = _refLinkController.text;
 
-            _isBizSettingsSet =
-                settingsAreSet; // Update state based on robust check
+            _isBizSettingsSet = settingsAreSet;
             _isBizLocked = _isBizSettingsSet;
           });
         } else {
-          debugPrint(
-              'SettingsScreen: Admin settings document ($adminUidToFetchSettings) data is null. Showing editable form.');
           if (mounted) setState(() => _isBizSettingsSet = false);
         }
       } else {
-        debugPrint(
-            'SettingsScreen: Admin settings document for $adminUidToFetchSettings not found. Showing editable form.');
         if (mounted) setState(() => _isBizSettingsSet = false);
       }
     } catch (e) {
-      debugPrint(
-          'SettingsScreen: Error loading user settings: $e. Showing editable form.');
+      debugPrint('SettingsScreen: Error loading user settings: $e.');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to load settings: ${e.toString()}')),
@@ -195,7 +204,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
 
     if (!_isBizSettingsSet) {
-      // Only do this check if it's the initial submission
       if (_bizNameController.text != _bizNameConfirmController.text ||
           _refLinkController.text != _refLinkConfirmController.text) {
         if (!mounted) return;
@@ -254,7 +262,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     try {
       debugPrint('SettingsScreen: Attempting to save settings to Firestore.');
-      // Always use set with merge: true for settings, as we are managing subsets
       await settingsRef.set({
         'biz_opp': _bizNameController.text.trim(),
         'biz_opp_ref_url': _refLinkController.text.trim(),
@@ -263,12 +270,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         'countries': _selectedCountries,
       }, SetOptions(merge: true));
 
-      debugPrint(
-          'SettingsScreen: Settings saved successfully to Firestore. Reloading UI.');
-      await _loadUserSettings(); // Re-load settings to update UI with latest saved values and trigger display-only mode
+      debugPrint('SettingsScreen: Settings saved successfully. Reloading UI.');
+      await _loadUserSettings();
 
       if (!mounted) return;
-
       Scrollable.ensureVisible(
         _formKey.currentContext!,
         duration: const Duration(milliseconds: 300),
@@ -286,8 +291,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           SnackBar(content: Text('Failed to save settings: ${e.toString()}')),
         );
       }
-    } finally {
-      // No setState here, _isBizSettingsSet is already updated by _loadUserSettings
     }
   }
 
@@ -304,12 +307,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Determine which view to show: form or display-only
     Widget content;
     if (!_isBizSettingsSet) {
-      // If settings are not yet set, show the form
-      debugPrint(
-          'SettingsScreen: Rendering form view (_isBizSettingsSet is false)');
       content = Form(
         key: _formKey,
         child: Column(
@@ -322,6 +321,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             const SizedBox(height: 16),
+            RichText(
+              textAlign: TextAlign.start,
+              text: TextSpan(
+                style: DefaultTextStyle.of(context)
+                    .style
+                    .copyWith(fontSize: 14, color: Colors.black87),
+                children: [
+                  TextSpan(
+                    text: "Hello ${_adminFirstName ?? 'Admin'}!\n\n",
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  TextSpan(
+                    text: "Welcome to your Business Opportunity Settings.\n\n",
+                    style: const TextStyle(fontWeight: FontWeight.normal),
+                  ),
+                  const TextSpan(
+                    text: "Please review these settings carefully, as ",
+                    style: TextStyle(fontWeight: FontWeight.normal),
+                  ),
+                  TextSpan(
+                    text: "once submitted, they cannot be changed.",
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, color: Colors.red),
+                  ),
+                  const TextSpan(
+                    text:
+                        " These values will apply to every member of your downline team, ensuring the highest level of integrity, consistency, and fairness across your organization. Your thoughtful setup here is key to their long-term success.",
+                    style: TextStyle(fontWeight: FontWeight.normal),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
             TextFormField(
               controller: _bizNameController,
               readOnly: _isBizLocked,
@@ -335,7 +367,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               validator: (value) =>
                   _isBizLocked ? null : (value!.isEmpty ? 'Required' : null),
             ),
-            if (!_isBizLocked) // Only show confirm field if not locked
+            if (!_isBizLocked)
               TextFormField(
                 controller: _bizNameConfirmController,
                 decoration: const InputDecoration(
@@ -386,7 +418,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ? null
                           : (value!.isEmpty ? 'Required' : null),
                     ),
-                    if (!_isBizLocked) // Only show confirm field if not locked
+                    if (!_isBizLocked)
                       TextFormField(
                         controller: _refLinkConfirmController,
                         decoration: const InputDecoration(
@@ -419,52 +451,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            // This MultiSelectDialogField is now conditionally enabled/disabled
-            AbsorbPointer(
-              // Make it un-interactable when locked
-              absorbing: _isBizSettingsSet, // If true, absorbs pointer events
-              child: MultiSelectDialogField<String>(
-                items: allCountries
-                    .map((e) => MultiSelectItem<String>(e, e))
-                    .toList(),
-                initialValue: _selectedCountries,
-                title: const Text("Select Countries"),
-                buttonText: Text(_selectedCountries.isEmpty
-                    ? "Select Countries"
-                    : "Edit Countries"),
-                searchable: true,
-                decoration: BoxDecoration(
-                  color: _isBizSettingsSet
-                      ? Colors.grey[100]
-                      : Colors.white, // Grey out background when locked
-                  border: Border.all(
-                    color: _isBizSettingsSet
-                        ? Colors.grey.shade300
-                        : Colors.deepPurple.shade200,
-                    width: 1.5,
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                buttonIcon: Icon(
-                  Icons.arrow_drop_down,
-                  color: _isBizSettingsSet ? Colors.grey : Colors.deepPurple,
-                ),
-                selectedColor: Colors.deepPurple,
-                dialogHeight: 500,
-                chipDisplay: MultiSelectChipDisplay(
-                  chipColor: Colors.deepPurple.shade100,
-                  textStyle: const TextStyle(color: Colors.black87),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                onConfirm: (values) {
-                  setState(() {
-                    _selectedCountries = List.from(values);
-                  });
-                },
+
+            // --- REVISED COUNTRY SELECTION UI ---
+            Container(
+              padding: const EdgeInsets.all(8),
+              constraints: const BoxConstraints(minHeight: 100),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade400),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Wrap(
+                spacing: 8.0,
+                runSpacing: 4.0,
+                children: [
+                  ..._selectedCountries.map((country) => Chip(
+                        label: Text(country),
+                        onDeleted: () {
+                          setState(() {
+                            _selectedCountries.remove(country);
+                          });
+                        },
+                      )),
+                ],
               ),
             ),
+            const SizedBox(height: 8),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.add),
+              label: const Text("Add a Country"),
+              onPressed: _openCountryPicker,
+            ),
+            // --- END OF REVISED UI ---
+
             const SizedBox(height: 20),
             const Center(
               child: Text(
@@ -583,9 +601,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       );
     } else {
-      // If settings are set, show the display-only view
-      debugPrint(
-          'SettingsScreen: Rendering display-only view (_isBizSettingsSet is true)');
       content = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -596,25 +611,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 24),
-          // Display Business Opportunity Name
           _buildInfoRow(
             label: 'Business Opportunity Name',
             content: _bizOpp ?? 'Not Set',
             icon: Icons.business,
           ),
           const SizedBox(height: 16),
-          // Display Unique Referral Link URL
           _buildInfoRow(
             label: 'Your Unique Referral Link URL',
             content: _bizRefUrl ?? 'Not Set',
             icon: Icons.link,
           ),
           const SizedBox(height: 24),
-          // Display Available Countries
           const Text('Selected Available Countries',
               style: TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 16),
-          // Display selected countries as text with flags
           if (_selectedCountries.isNotEmpty)
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -645,8 +656,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           else
             const Text('No countries selected.',
                 style: TextStyle(fontSize: 16, color: Colors.grey)),
-
-          const SizedBox(height: 10),
+          const SizedBox(height: 20),
           const Center(
             child: Text(
               'TeamBuild Pro is your downline’s launchpad!',
@@ -703,41 +713,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          // Display Direct Sponsors
           _buildInfoRow(
             label: 'Direct Sponsors',
             content: _directSponsorMin.toString(),
             icon: Icons.people,
           ),
           const SizedBox(height: 16),
-          // Display Total Team Members
           _buildInfoRow(
             label: 'Total Team Members',
             content: _totalTeamMin.toString(),
             icon: Icons.groups,
           ),
           const SizedBox(height: 24),
-          // Optional: Add an "Edit Settings" button here if you want to allow changing ONLY the countries after submission
-          // Or if you want a reset feature for bizOpp etc. (which your original request implies are locked).
         ],
       );
     }
 
     return Scaffold(
       appBar: AppHeaderWithMenu(
-        firebaseConfig: widget.firebaseConfig, // Pass required args
+        firebaseConfig: widget.firebaseConfig,
         initialAuthToken: widget.initialAuthToken,
         appId: widget.appId,
       ),
       backgroundColor: Colors.white,
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
-        child: content, // Display the chosen content (form or display-only)
+        child: content,
       ),
     );
   }
 
-  // Helper widget to build info rows for the display-only view
   Widget _buildInfoRow(
       {required String label,
       required String content,
@@ -769,14 +774,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // Helper to convert country code to flag emoji
   String _countryCodeToEmoji(String countryCode) {
-    // Basic check for 2-letter country code
     if (countryCode.length != 2) return '';
-
     final int firstLetter = countryCode.codeUnitAt(0) - 0x41 + 0x1F1E6;
     final int secondLetter = countryCode.codeUnitAt(1) - 0x41 + 0x1F1E6;
-
     return String.fromCharCode(firstLetter) + String.fromCharCode(secondLetter);
   }
 }

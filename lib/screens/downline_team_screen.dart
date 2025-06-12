@@ -5,8 +5,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_model.dart';
 import '../screens/member_detail_screen.dart';
 import '../widgets/header_widgets.dart';
-// import '../services/session_manager.dart'; // Import SessionManager
-// import 'package:flutter/foundation.dart'; // Import for debugPrint
 
 enum JoinWindow {
   none,
@@ -34,13 +32,13 @@ class DownlineTeamScreen extends StatefulWidget {
 }
 
 class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
-  bool isLoading = true; // Set to true initially to show spinner
-  JoinWindow selectedJoinWindow = JoinWindow.none; // Default to 'none'
+  bool isLoading = true;
+  JoinWindow selectedJoinWindow = JoinWindow.none;
   Map<int, List<UserModel>> downlineByLevel = {};
   final currentUserAuth = FirebaseAuth.instance.currentUser;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-  Timer? _debounce;
+  // Timer? _debounce; // REMOVED: No longer needed as search is not live.
   int levelOffset = 0;
   List<UserModel> _fullDownlineUsers = [];
   Map<JoinWindow, int> downlineCounts = {
@@ -57,19 +55,17 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
   @override
   void initState() {
     super.initState();
-    // Reinstated: _fetchAndListenToCurrentUser now calls fetchDownline() immediately.
     _fetchAndListenToCurrentUser();
   }
 
   @override
   void dispose() {
-    _debounce?.cancel();
+    // _debounce?.cancel(); // REMOVED: No longer needed.
     _searchController.dispose();
     _currentUserDocSubscription?.cancel();
     super.dispose();
   }
 
-  // Reverted to immediately trigger fetchDownline after current user data is loaded.
   Future<void> _fetchAndListenToCurrentUser() async {
     if (currentUserAuth == null) {
       debugPrint('No authenticated user found for downline screen.');
@@ -84,10 +80,12 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
         .listen((docSnapshot) async {
       if (docSnapshot.exists) {
         _currentUserModel = UserModel.fromFirestore(docSnapshot);
-        debugPrint('Current user model loaded: ${_currentUserModel?.firstName}');
-        fetchDownline(); // Reinstated: Trigger downline fetch immediately
+        debugPrint(
+            'Current user model loaded: ${_currentUserModel?.firstName}');
+        fetchDownline();
       } else {
-        debugPrint('Current user document does not exist for downline screen: ${currentUserAuth!.uid}');
+        debugPrint(
+            'Current user document does not exist for downline screen: ${currentUserAuth!.uid}');
         if (mounted) setState(() => isLoading = false);
       }
     }, onError: (error) {
@@ -104,7 +102,7 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
 
   Future<void> fetchDownline() async {
     if (!mounted) return;
-    setState(() => isLoading = true); // Ensure loading is true when fetching
+    setState(() => isLoading = true);
 
     if (_currentUserModel == null || _currentUserModel!.uid.isEmpty) {
       debugPrint('Current user model is not available.');
@@ -143,7 +141,9 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
             .where(FieldPath.documentId, whereIn: batchUids)
             .get();
 
-        fetchedDownlineUsers.addAll(batchSnapshot.docs.map((doc) => UserModel.fromFirestore(doc)).toList());
+        fetchedDownlineUsers.addAll(batchSnapshot.docs
+            .map((doc) => UserModel.fromFirestore(doc))
+            .toList());
       }
       _fullDownlineUsers = fetchedDownlineUsers;
 
@@ -176,26 +176,38 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
           // Update counts
           if (joined != null) {
             if (joined.isAfter(now.subtract(const Duration(days: 1)))) {
-              downlineCounts[JoinWindow.last24] = (downlineCounts[JoinWindow.last24] ?? 0) + 1;
+              downlineCounts[JoinWindow.last24] =
+                  (downlineCounts[JoinWindow.last24] ?? 0) + 1;
             }
             if (joined.isAfter(now.subtract(const Duration(days: 7)))) {
-              downlineCounts[JoinWindow.last7] = (downlineCounts[JoinWindow.last7] ?? 0) + 1;
+              downlineCounts[JoinWindow.last7] =
+                  (downlineCounts[JoinWindow.last7] ?? 0) + 1;
             }
             if (joined.isAfter(now.subtract(const Duration(days: 30)))) {
-              downlineCounts[JoinWindow.last30] = (downlineCounts[JoinWindow.last30] ?? 0) + 1;
+              downlineCounts[JoinWindow.last30] =
+                  (downlineCounts[JoinWindow.last30] ?? 0) + 1;
             }
           }
           if (qualified != null) {
-            downlineCounts[JoinWindow.newQualified] = (downlineCounts[JoinWindow.newQualified] ?? 0) + 1;
+            downlineCounts[JoinWindow.newQualified] =
+                (downlineCounts[JoinWindow.newQualified] ?? 0) + 1;
           }
-          downlineCounts[JoinWindow.all] = (downlineCounts[JoinWindow.all] ?? 0) + 1;
+          downlineCounts[JoinWindow.all] =
+              (downlineCounts[JoinWindow.all] ?? 0) + 1;
 
-          final include = selectedJoinWindow == JoinWindow.none || // Show all if none selected initially
-                          selectedJoinWindow == JoinWindow.all ||
-                          (selectedJoinWindow == JoinWindow.last24 && joined != null && joined.isAfter(now.subtract(const Duration(days: 1)))) ||
-                          (selectedJoinWindow == JoinWindow.last7 && joined != null && joined.isAfter(now.subtract(const Duration(days: 7)))) ||
-                          (selectedJoinWindow == JoinWindow.last30 && joined != null && joined.isAfter(now.subtract(const Duration(days: 30)))) ||
-                          (selectedJoinWindow == JoinWindow.newQualified && qualified != null);
+          final include = selectedJoinWindow == JoinWindow.none ||
+              selectedJoinWindow == JoinWindow.all ||
+              (selectedJoinWindow == JoinWindow.last24 &&
+                  joined != null &&
+                  joined.isAfter(now.subtract(const Duration(days: 1)))) ||
+              (selectedJoinWindow == JoinWindow.last7 &&
+                  joined != null &&
+                  joined.isAfter(now.subtract(const Duration(days: 7)))) ||
+              (selectedJoinWindow == JoinWindow.last30 &&
+                  joined != null &&
+                  joined.isAfter(now.subtract(const Duration(days: 30)))) ||
+              (selectedJoinWindow == JoinWindow.newQualified &&
+                  qualified != null);
 
           if (include && (_searchQuery.isEmpty || userMatchesSearch(user))) {
             final displayLevel = user.level! - levelOffset;
@@ -205,7 +217,8 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
       }
 
       grouped.forEach((level, users) {
-        users.sort((a, b) => b.joined?.compareTo(a.joined ?? DateTime(1970)) ?? 0);
+        users.sort(
+            (a, b) => b.joined?.compareTo(a.joined ?? DateTime(1970)) ?? 0);
       });
 
       if (!mounted) return;
@@ -213,7 +226,6 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
         downlineByLevel = Map.fromEntries(
             grouped.entries.toList()..sort((a, b) => a.key.compareTo(b.key)));
       });
-
     } catch (e) {
       debugPrint('Error loading downline: $e');
     } finally {
@@ -234,7 +246,7 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
       case JoinWindow.all:
         return 'All Team Members (${downlineCounts[JoinWindow.all]})';
       case JoinWindow.none:
-        return 'Select Downline Report'; // Hint text
+        return 'Select Downline Report';
     }
   }
 
@@ -308,12 +320,11 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
                         if (!mounted) return;
                         setState(() {
                           selectedJoinWindow = value;
-                          _searchQuery = ''; // Reset search on new filter
+                          _searchQuery = '';
+                          _searchController
+                              .clear(); // Also clear the text field
                         });
-                        // Always fetch downline when dropdown value changes
-                        // (even if 'none' is selected, to update counts to 0 and clear display)
-                        _debounce?.cancel();
-                        fetchDownline(); // Always re-fetch data based on new filter
+                        fetchDownline();
                       }
                     },
                     items: JoinWindow.values.map((window) {
@@ -324,7 +335,6 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
                     }).toList(),
                   ),
                 ),
-                // Only show search field if a specific report type is selected or if 'all' is selected
                 if (selectedJoinWindow != JoinWindow.none)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -335,14 +345,8 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
                         prefixIcon: Icon(Icons.search),
                         border: OutlineInputBorder(),
                       ),
-                      onChanged: (value) {
-                        if (_debounce?.isActive ?? false) _debounce!.cancel();
-                        _debounce = Timer(const Duration(milliseconds: 500), () {
-                          if (!mounted) return;
-                          setState(() => _searchQuery = value);
-                          fetchDownline(); // Re-fetch on debounce
-                        });
-                      },
+                      // REMOVED: The onChanged callback is no longer needed for live search.
+                      // onChanged: (value) { ... },
                       onSubmitted: (value) {
                         if (!mounted) return;
                         setState(() => _searchQuery = value);
@@ -350,11 +354,12 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
                       },
                     ),
                   ),
-                // Only show RichText for NewQualified and if the biz opp exists
-                if (selectedJoinWindow == JoinWindow.newQualified && uplineBizOpp != null && uplineBizOpp!.isNotEmpty)
+                if (selectedJoinWindow == JoinWindow.newQualified &&
+                    uplineBizOpp != null &&
+                    uplineBizOpp!.isNotEmpty)
                   Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16.0, vertical: 8),
                     child: RichText(
                       text: TextSpan(
                         style: const TextStyle(
@@ -387,7 +392,6 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
                       ),
                     ),
                   ),
-                // Display the list or messages based on loading/selection/data presence
                 if (!isLoading && selectedJoinWindow == JoinWindow.none)
                   const Expanded(
                     child: Center(
@@ -398,7 +402,9 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
                       ),
                     ),
                   )
-                else if (!isLoading && _fullDownlineUsers.isEmpty && selectedJoinWindow != JoinWindow.none)
+                else if (!isLoading &&
+                    _fullDownlineUsers.isEmpty &&
+                    selectedJoinWindow != JoinWindow.none)
                   const Expanded(
                     child: Center(
                       child: Text(
@@ -408,7 +414,9 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
                       ),
                     ),
                   )
-                else if (!isLoading && _searchQuery.isNotEmpty && downlineByLevel.isEmpty)
+                else if (!isLoading &&
+                    _searchQuery.isNotEmpty &&
+                    downlineByLevel.isEmpty)
                   const Expanded(
                     child: Center(
                       child: Text(
@@ -418,7 +426,7 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
                       ),
                     ),
                   )
-                else if (!isLoading) // Display the list if not loading and data is present
+                else if (!isLoading)
                   Expanded(
                     child: ListView(
                       children: [
@@ -468,10 +476,13 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
                                               Navigator.push(
                                                 context,
                                                 MaterialPageRoute(
-                                                  builder: (_) => MemberDetailScreen(
+                                                  builder: (_) =>
+                                                      MemberDetailScreen(
                                                     userId: user.uid,
-                                                    firebaseConfig: widget.firebaseConfig,
-                                                    initialAuthToken: widget.initialAuthToken,
+                                                    firebaseConfig:
+                                                        widget.firebaseConfig,
+                                                    initialAuthToken:
+                                                        widget.initialAuthToken,
                                                     appId: widget.appId,
                                                   ),
                                                 ),
