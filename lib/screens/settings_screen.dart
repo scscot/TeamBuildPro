@@ -1,11 +1,8 @@
-// ignore_for_file: use_build_context_synchronously, unnecessary_null_comparison
-
 import 'package:flutter/material.dart';
-import 'package:country_picker/country_picker.dart'; // Import country_picker package
+import 'package:country_picker/country_picker.dart';
 import '../widgets/header_widgets.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-// import '../data/states_by_country.dart';
 import '../services/subscription_service.dart';
 import '../models/user_model.dart';
 
@@ -41,16 +38,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   List<String> _selectedCountries = [];
   int _directSponsorMin = 5;
   int _totalTeamMin = 10;
-  String? _bizOpp; // Business Opportunity Name
-  String? _bizRefUrl; // Business Opportunity Referral URL
-  String? _adminFirstName; // Holds the admin's first name from Firestore
-  bool _isBizLocked =
-      false; // Indicates if bizOpp and bizRefUrl fields are locked for editing
-  bool _isBizSettingsSet =
-      false; // Indicates if bizOpp settings (name, url, mins) have been initially set
+  String? _bizOpp;
+  String? _bizRefUrl;
+  String? _adminFirstName;
+  bool _isBizLocked = false;
+  bool _isBizSettingsSet = false;
+  bool _isLoading = true;
 
-  // This map is still required to render flags in the display-only view after saving.
-  // Ensure it is populated with all countries you intend to support.
   static const Map<String, String> _countryNameToCode = {
     'United States': 'US',
     'Canada': 'CA',
@@ -68,18 +62,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _loadUserSettings();
   }
 
-  // Implemented function to use the country_picker package
   void _openCountryPicker() {
     showCountryPicker(
       context: context,
-      showPhoneCode: false, // You can customize what is shown
+      showPhoneCode: false,
       onSelect: (Country country) {
-        // Update state with the selected country
         setState(() {
-          // Add the country only if it's not already in the list
           if (!_selectedCountries.contains(country.name)) {
             _selectedCountries.add(country.name);
-            _selectedCountries.sort(); // Keep the list sorted alphabetically
+            _selectedCountries.sort();
           }
         });
       },
@@ -148,7 +139,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       if (!mounted) return;
 
-      if (adminSettingsDoc != null && adminSettingsDoc.exists) {
+      if (adminSettingsDoc.exists) {
         final data = adminSettingsDoc.data();
         if (data != null) {
           final bizOppFromFirestore = data['biz_opp'];
@@ -161,30 +152,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
           bool settingsAreSet = (bizOppFromFirestore?.isNotEmpty ?? false) &&
               (bizRefUrlFromFirestore?.isNotEmpty ?? false) &&
               (sponsorMinFromFirestore != null) &&
-              (teamMinFromFirestore != null);
+              (teamMinFromFirestore != null) &&
+              (countriesFromFirestore.isNotEmpty);
 
-          setState(() {
-            _selectedCountries = countriesFromFirestore;
-            _bizOpp = bizOppFromFirestore;
-            _bizRefUrl = bizRefUrlFromFirestore;
-            _directSponsorMin = sponsorMinFromFirestore ?? 5;
-            _totalTeamMin = teamMinFromFirestore ?? 10;
+          _selectedCountries = countriesFromFirestore;
+          _bizOpp = bizOppFromFirestore;
+          _bizRefUrl = bizRefUrlFromFirestore;
+          _directSponsorMin = sponsorMinFromFirestore ?? 5;
+          _totalTeamMin = teamMinFromFirestore ?? 10;
 
-            _directSponsorMinController.text = _directSponsorMin.toString();
-            _totalTeamMinController.text = _totalTeamMin.toString();
-            _bizNameController.text = _bizOpp ?? '';
-            _bizNameConfirmController.text = _bizOpp ?? '';
-            _refLinkController.text = _bizRefUrl ?? '';
-            _refLinkConfirmController.text = _refLinkController.text;
+          _directSponsorMinController.text = _directSponsorMin.toString();
+          _totalTeamMinController.text = _totalTeamMin.toString();
+          _bizNameController.text = _bizOpp ?? '';
+          _bizNameConfirmController.text = _bizOpp ?? '';
+          _refLinkController.text = _bizRefUrl ?? '';
+          _refLinkConfirmController.text = _refLinkController.text;
 
-            _isBizSettingsSet = settingsAreSet;
-            _isBizLocked = _isBizSettingsSet;
-          });
+          _isBizSettingsSet = settingsAreSet;
+          _isBizLocked = _isBizSettingsSet;
         } else {
-          if (mounted) setState(() => _isBizSettingsSet = false);
+          _isBizSettingsSet = false;
         }
       } else {
-        if (mounted) setState(() => _isBizSettingsSet = false);
+        _isBizSettingsSet = false;
       }
     } catch (e) {
       debugPrint('SettingsScreen: Error loading user settings: $e.');
@@ -193,7 +183,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           SnackBar(content: Text('Failed to load settings: ${e.toString()}')),
         );
       }
-      if (mounted) setState(() => _isBizSettingsSet = false);
+      _isBizSettingsSet = false;
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -307,9 +303,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    Widget content;
+    return Scaffold(
+      appBar: AppHeaderWithMenu(
+        firebaseConfig: widget.firebaseConfig,
+        initialAuthToken: widget.initialAuthToken,
+        appId: widget.appId,
+      ),
+      backgroundColor: Colors.white,
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: _buildContent(),
+            ),
+    );
+  }
+
+  Widget _buildContent() {
     if (!_isBizSettingsSet) {
-      content = Form(
+      // --- EDITABLE FORM VIEW ---
+      return Form(
         key: _formKey,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -451,8 +464,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             const SizedBox(height: 16),
-
-            // --- REVISED COUNTRY SELECTION UI ---
             Container(
               padding: const EdgeInsets.all(8),
               constraints: const BoxConstraints(minHeight: 100),
@@ -481,63 +492,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
               label: const Text("Add a Country"),
               onPressed: _openCountryPicker,
             ),
-            // --- END OF REVISED UI ---
-
             const SizedBox(height: 20),
-            const Center(
-              child: Text(
-                'TeamBuild Pro is your downline’s launchpad!',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
+            const Text(
+              'TeamBuild Pro Feeder System',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 20),
-            Text.rich(
-              TextSpan(
-                children: [
-                  const TextSpan(
-                      text:
-                          "It helps each member pre-build their team for free—before ever joining "),
-                  TextSpan(
-                    text: _bizOpp ?? 'your business opportunity',
-                    style: const TextStyle(
-                        color: Colors.blue, fontWeight: FontWeight.w500),
+            Row(
+              // Wrap the Text.rich widget with a Row
+              children: [
+                Expanded(
+                  // And then with an Expanded widget
+                  child: Text.rich(
+                    TextSpan(
+                      style: DefaultTextStyle.of(context)
+                          .style
+                          .copyWith(fontSize: 14),
+                      children: [
+                        const TextSpan(
+                            text:
+                                "When your downline members meet your eligibility criteria, we automatically invite them to join your "),
+                        TextSpan(
+                          text: _bizOpp ?? 'business opportunity',
+                          style: const TextStyle(
+                              color: Colors.blue, fontWeight: FontWeight.w500),
+                        ),
+                        const TextSpan(
+                            text:
+                                " team — with their pre-built TeamBuild Pro downlines ready to follow."),
+                      ],
+                    ),
                   ),
-                  const TextSpan(
-                      text:
-                          ".\n\nOnce they meet the eligibility criteria you set below, they’ll automatically receive an invitation to join "),
-                  TextSpan(
-                    text: _bizOpp ?? 'business opportunity',
-                    style: const TextStyle(
-                        color: Colors.blue, fontWeight: FontWeight.w500),
-                  ),
-                  const TextSpan(
-                      text:
-                          " with their entire pre-built TeamBuild Pro downline ready to follow them into your "),
-                  TextSpan(
-                    text: _bizOpp ?? 'your business opportunity',
-                    style: const TextStyle(
-                        color: Colors.blue, fontWeight: FontWeight.w500),
-                  ),
-                  const TextSpan(
-                      text:
-                          ' organization.\n\nSet challenging requirements to ensure your downline members enter '),
-                  TextSpan(
-                    text: _bizOpp ?? 'your business opportunity',
-                    style: const TextStyle(
-                        color: Colors.blue, fontWeight: FontWeight.w500),
-                  ),
-                  const TextSpan(
-                      text:
-                          " strong, aligned, and positioned for long-term success!\n\nImportant! To maintain consistency, integrity, and fairness, once these values are set, they cannot be changed"),
-                ],
-              ),
+                ),
+              ],
             ),
             const SizedBox(height: 24),
-            const Center(
-              child: Text(
-                'Set Minimum Eligibility Requirements',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-              ),
+            const Text(
+              'Minimum Eligibility Requirements',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 12),
             Row(
@@ -601,7 +593,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       );
     } else {
-      content = Column(
+      // --- DISPLAY-ONLY VIEW ---
+      return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Center(
@@ -611,16 +604,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 24),
-          _buildInfoRow(
-            label: 'Business Opportunity Name',
-            content: _bizOpp ?? 'Not Set',
-            icon: Icons.business,
-          ),
-          const SizedBox(height: 16),
-          _buildInfoRow(
-            label: 'Your Unique Referral Link URL',
-            content: _bizRefUrl ?? 'Not Set',
-            icon: Icons.link,
+          // --- REVISED UI for Business Info ---
+          Card(
+            elevation: 2,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.business, color: Colors.blue),
+                  title: const Text('Business Opportunity Name'),
+                  subtitle: Text(
+                    _bizOpp ?? 'Not Set',
+                    style: const TextStyle(fontSize: 16, color: Colors.black87),
+                  ),
+                ),
+                const Divider(height: 1, indent: 16, endIndent: 16),
+                ListTile(
+                  leading: const Icon(Icons.link, color: Colors.blue),
+                  title: const Text('Your Unique Referral Link URL'),
+                  subtitle: SelectableText(
+                    _bizRefUrl ?? 'Not Set',
+                    style: const TextStyle(fontSize: 14, color: Colors.black54),
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 24),
           const Text('Selected Available Countries',
@@ -656,28 +665,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
           else
             const Text('No countries selected.',
                 style: TextStyle(fontSize: 16, color: Colors.grey)),
-          const SizedBox(height: 20),
-          const Center(
-            child: Text(
-              'TeamBuild Pro is your downline’s launchpad!',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
+          const SizedBox(height: 24),
+          const Text(
+            'TeamBuild Pro Feeder System',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 20),
           Text.rich(
             TextSpan(
+              style: DefaultTextStyle.of(context).style.copyWith(fontSize: 14),
               children: [
                 const TextSpan(
                     text:
-                        "It helps each member pre-build their team for free—before ever joining "),
-                TextSpan(
-                  text: _bizOpp ?? 'your business opportunity',
-                  style: const TextStyle(
-                      color: Colors.blue, fontWeight: FontWeight.w500),
-                ),
-                const TextSpan(
-                    text:
-                        ".\n\nOnce they meet the eligibility criteria you set below, they’ll automatically receive an invitation to join "),
+                        "When your downline members meet your eligibility criteria, we automatically invite them to join your "),
                 TextSpan(
                   text: _bizOpp ?? 'business opportunity',
                   style: const TextStyle(
@@ -685,94 +685,73 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const TextSpan(
                     text:
-                        " with their entire pre-built TeamBuild Pro downline ready to follow them into your "),
-                TextSpan(
-                  text: _bizOpp ?? 'your business opportunity',
-                  style: const TextStyle(
-                      color: Colors.blue, fontWeight: FontWeight.w500),
-                ),
-                const TextSpan(
-                    text:
-                        ' organization.\n\nSet challenging requirements to ensure your downline members enter '),
-                TextSpan(
-                  text: _bizOpp ?? 'your business opportunity',
-                  style: const TextStyle(
-                      color: Colors.blue, fontWeight: FontWeight.w500),
-                ),
-                const TextSpan(
-                    text:
-                        " strong, aligned, and positioned for long-term success!\n\nImportant! To maintain consistency, integrity, and fairness, once these values are set, they cannot be changed"),
+                        " team — with their pre-built TeamBuild Pro downlines ready to follow."),
               ],
             ),
           ),
           const SizedBox(height: 24),
-          const Center(
-            child: Text(
-              'Minimum Eligibility Requirements',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-            ),
+          const Text(
+            'Minimum Eligibility Requirements',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 12),
-          _buildInfoRow(
-            label: 'Direct Sponsors',
-            content: _directSponsorMin.toString(),
-            icon: Icons.people,
-          ),
-          const SizedBox(height: 16),
-          _buildInfoRow(
-            label: 'Total Team Members',
-            content: _totalTeamMin.toString(),
-            icon: Icons.groups,
+          // --- REVISED UI for Eligibility Requirements ---
+          Row(
+            children: [
+              _buildMetricCard(
+                icon: Icons.people,
+                value: _directSponsorMin.toString(),
+                label: 'Direct Sponsors',
+              ),
+              const SizedBox(width: 16),
+              _buildMetricCard(
+                icon: Icons.groups,
+                value: _totalTeamMin.toString(),
+                label: 'Total Team Members',
+              ),
+            ],
           ),
           const SizedBox(height: 24),
         ],
       );
     }
-
-    return Scaffold(
-      appBar: AppHeaderWithMenu(
-        firebaseConfig: widget.firebaseConfig,
-        initialAuthToken: widget.initialAuthToken,
-        appId: widget.appId,
-      ),
-      backgroundColor: Colors.white,
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: content,
-      ),
-    );
   }
 
-  Widget _buildInfoRow(
-      {required String label,
-      required String content,
-      required IconData icon}) {
-    return Card(
-      elevation: 3,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Row(
-          children: [
-            Icon(icon, size: 28, color: Colors.blue),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 16)),
-                  const SizedBox(height: 4),
-                  Text(content, style: const TextStyle(fontSize: 16)),
-                ],
+  // --- NEW Helper Widget for Metric Cards ---
+  Widget _buildMetricCard({
+    required IconData icon,
+    required String value,
+    required String label,
+  }) {
+    return Expanded(
+      child: Card(
+        elevation: 2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 28, color: Colors.blue),
+              const SizedBox(height: 8),
+              Text(
+                value,
+                style:
+                    const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
               ),
-            ),
-          ],
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
+
+  // --- OLD _buildInfoRow has been removed ---
 
   String _countryCodeToEmoji(String countryCode) {
     if (countryCode.length != 2) return '';
