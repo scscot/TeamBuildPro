@@ -1,17 +1,16 @@
-// FINAL PATCH — MessageCenterScreen as Inbox-Only View (with Full Name & Profile Pics)
+// message_center_screen.dart (Corrected)
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-// import 'package:firebase_auth/firebase_auth.dart'; // Import for FirebaseAuth
+import 'package:intl/intl.dart'; // Import for date formatting
 import '../widgets/header_widgets.dart';
 import '../services/session_manager.dart';
 import '../services/firestore_service.dart';
 import 'message_thread_screen.dart';
 import '../services/subscription_service.dart';
-import '../models/user_model.dart'; // Ensure UserModel is imported for user.role, etc.
+import '../models/user_model.dart';
 
 class MessageCenterScreen extends StatefulWidget {
-  // Add required parameters to MessageCenterScreen constructor
   final Map<String, dynamic> firebaseConfig;
   final String? initialAuthToken;
   final String appId;
@@ -32,7 +31,7 @@ class _MessageCenterScreenState extends State<MessageCenterScreen> {
   final FirestoreService _firestoreService = FirestoreService();
 
   String? _currentUserId;
-  final Map<String, UserModel> _usersInThreads = {}; // uid -> UserModel
+  final Map<String, UserModel> _usersInThreads = {};
 
   @override
   void initState() {
@@ -43,14 +42,13 @@ class _MessageCenterScreenState extends State<MessageCenterScreen> {
   Future<void> _loadCurrentUserAndCheckSubscription() async {
     final user = await _sessionManager.getCurrentUser();
 
-    // PATCH START — Subscription check for Admin users
     if (user != null && user.role == 'admin') {
       final status =
           await SubscriptionService.checkAdminSubscriptionStatus(user.uid);
       final isActive = status['isActive'] == true;
 
       if (!isActive) {
-        if (!mounted) return; // Guarded context usage
+        if (!mounted) return;
         showDialog(
           context: context,
           barrierDismissible: false,
@@ -61,7 +59,7 @@ class _MessageCenterScreenState extends State<MessageCenterScreen> {
             actions: [
               TextButton(
                 onPressed: () {
-                  Navigator.of(context).pop(); // Pop the dialog first
+                  Navigator.of(context).pop();
                   Navigator.pushNamed(context, '/upgrade');
                 },
                 child: const Text('Upgrade Now'),
@@ -69,28 +67,27 @@ class _MessageCenterScreenState extends State<MessageCenterScreen> {
             ],
           ),
         );
-        return; // block loading threads
+        return;
       }
     }
-    // PATCH END
 
     if (mounted && user != null) {
       setState(() {
         _currentUserId = user.uid;
-        _usersInThreads[user.uid] = user; // Add current user to map
+        _usersInThreads[user.uid] = user;
       });
     }
   }
 
   Future<List<QueryDocumentSnapshot>> _getInboxThreads() async {
     if (_currentUserId == null) {
-      return []; // Return empty if current user ID is not loaded yet
+      return [];
     }
-    // Query for threads where the current user is a participant.
-    // Assuming 'allowedUsers' is an array on the message thread document that contains participant UIDs.
+    // MODIFIED: Order threads by the new 'lastUpdatedAt' field to show recent chats first.
     final snapshot = await FirebaseFirestore.instance
         .collection('messages')
         .where('allowedUsers', arrayContains: _currentUserId)
+        .orderBy('lastUpdatedAt', descending: true)
         .get();
     return snapshot.docs;
   }
@@ -103,17 +100,15 @@ class _MessageCenterScreenState extends State<MessageCenterScreen> {
   }
 
   Future<void> _fetchUsersInThreads(List<String> uids) async {
-    // Filter out UIDs already fetched to avoid redundant calls
-    final uidsToFetch = uids.where((uid) => !_usersInThreads.containsKey(uid)).toList();
+    final uidsToFetch =
+        uids.where((uid) => !_usersInThreads.containsKey(uid)).toList();
 
     if (uidsToFetch.isEmpty) return;
 
-    // Firestore `whereIn` queries are limited to 10. You might need to batch these.
-    // For this example, assuming a small number of participants per conversation.
     final futures = uidsToFetch.map((uid) async {
       final user = await _firestoreService.getUser(uid);
       if (user != null) {
-        if (mounted) { // Guarded setState
+        if (mounted) {
           setState(() {
             _usersInThreads[user.uid] = user;
           });
@@ -126,7 +121,7 @@ class _MessageCenterScreenState extends State<MessageCenterScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppHeaderWithMenu( // Pass required args to AppHeaderWithMenu
+      appBar: AppHeaderWithMenu(
         firebaseConfig: widget.firebaseConfig,
         initialAuthToken: widget.initialAuthToken,
         appId: widget.appId,
@@ -153,33 +148,38 @@ class _MessageCenterScreenState extends State<MessageCenterScreen> {
                       future: _getInboxThreads(),
                       builder: (context, snapshot) {
                         if (snapshot.hasError) {
-                          debugPrint('Error fetching inbox threads: ${snapshot.error}');
-                          return Center(child: Text('Error: ${snapshot.error}'));
+                          debugPrint(
+                              'Error fetching inbox threads: ${snapshot.error}');
+                          return Center(
+                              child: Text('Error: ${snapshot.error}'));
                         }
-                        if (snapshot.connectionState == ConnectionState.waiting) {
-                          return const Center(child: CircularProgressIndicator());
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Center(
+                              child: CircularProgressIndicator());
                         }
 
                         final threads = snapshot.data ?? [];
-                        // Filter threads to only show ones involving the current user directly
-                        // (Assuming thread IDs are structured like uid1_uid2)
                         final userThreads = threads.where((doc) {
                           final id = doc.id;
                           return id.contains(_currentUserId!);
                         }).toList();
 
-                        // Extract all unique other user IDs involved in conversations
                         final otherUserIds = userThreads
                             .map((doc) => _getOtherUserId(doc.id))
                             .where((id) => id.isNotEmpty)
-                            .toSet() // Use toSet to get unique UIDs
+                            .toSet()
                             .toList();
 
                         return FutureBuilder(
                           future: _fetchUsersInThreads(otherUserIds),
-                          builder: (context, snapshot) {
-                            if (snapshot.connectionState == ConnectionState.waiting) {
-                              return const Center(child: CircularProgressIndicator());
+                          builder: (context, userSnapshot) {
+                            if (userSnapshot.connectionState ==
+                                    ConnectionState.waiting &&
+                                userThreads.isNotEmpty) {
+                              // Show a loader only if we are still fetching users but have threads
+                              return const Center(
+                                  child: CircularProgressIndicator());
                             }
 
                             if (userThreads.isEmpty) {
@@ -195,39 +195,69 @@ class _MessageCenterScreenState extends State<MessageCenterScreen> {
                               itemCount: userThreads.length,
                               itemBuilder: (context, index) {
                                 final doc = userThreads[index];
+                                final data = doc.data() as Map<String, dynamic>;
                                 final threadId = doc.id;
                                 final otherUserId = _getOtherUserId(threadId);
-                                final otherUser = _usersInThreads[otherUserId]; // Get full UserModel
+                                final otherUser = _usersInThreads[otherUserId];
 
                                 final otherUserName = otherUser != null
-                                    ? '${otherUser.firstName ?? ''} ${otherUser.lastName ?? ''}'.trim()
-                                    : otherUserId; // Fallback to UID if name not found
-                                final photoUrl = otherUser?.photoUrl; // Null-aware access for photoUrl
+                                    ? '${otherUser.firstName ?? ''} ${otherUser.lastName ?? ''}'
+                                        .trim()
+                                    : otherUserId;
+                                final photoUrl = otherUser?.photoUrl;
+
+                                // --- NEW: Logic for message snippet ---
+                                String lastMessage = data['lastMessage'] ?? '';
+                                String snippet = lastMessage;
+                                if (lastMessage.length > 35) {
+                                  snippet =
+                                      '${lastMessage.substring(0, 35)}...';
+                                }
+                                if (data['lastMessageSenderId'] ==
+                                    _currentUserId) {
+                                  snippet = 'You: $snippet';
+                                }
+
+                                // --- NEW: Logic for timestamp ---
+                                final timestamp =
+                                    data['lastUpdatedAt'] as Timestamp?;
+                                final timeStr = timestamp != null
+                                    ? DateFormat.jm().format(timestamp.toDate())
+                                    : '';
 
                                 return ListTile(
                                   leading: CircleAvatar(
-                                    backgroundImage: (photoUrl != null && photoUrl.isNotEmpty)
+                                    backgroundImage: (photoUrl != null &&
+                                            photoUrl.isNotEmpty)
                                         ? NetworkImage(photoUrl)
                                         : null,
-                                    child: (photoUrl == null || photoUrl.isEmpty)
+                                    child:
+                                        (photoUrl == null || photoUrl.isEmpty)
                                             ? const Icon(Icons.person_outline)
                                             : null,
                                   ),
-                                  title: Text(otherUserName),
-                                  trailing: const Icon(Icons.chevron_right),
+                                  title: Text(otherUserName,
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.bold)),
+                                  // MODIFIED: Added subtitle for the snippet
+                                  subtitle: Text(snippet),
+                                  // MODIFIED: Added trailing for the timestamp
+                                  trailing: Text(timeStr),
                                   onTap: () {
-                                    if (!mounted) return; // Guarded context usage
+                                    if (!mounted) {
+                                      return;
+                                    }
                                     Navigator.push(
                                       context,
                                       MaterialPageRoute(
                                         builder: (_) => MessageThreadScreen(
-                                          threadId: threadId, // Pass the threadId
-                                          // Now, pass all required args to MessageThreadScreen
+                                          threadId: threadId,
                                           firebaseConfig: widget.firebaseConfig,
-                                          initialAuthToken: widget.initialAuthToken,
+                                          initialAuthToken:
+                                              widget.initialAuthToken,
                                           appId: widget.appId,
-                                          recipientId: otherUserId, // Pass recipient's UID
-                                          recipientName: otherUserName, // Pass recipient's full name
+                                          recipientId: otherUserId,
+                                          recipientName: otherUserName,
                                         ),
                                       ),
                                     );

@@ -16,15 +16,16 @@ import '../screens/message_center_screen.dart';
 import '../config/app_constants.dart';
 
 class AppHeaderWithMenu extends StatefulWidget implements PreferredSizeWidget {
-  final Map<String, dynamic> firebaseConfig;
+  // REMOVED: final Map<String, dynamic> firebaseConfig;
   final String? initialAuthToken;
   final String appId;
 
   const AppHeaderWithMenu({
     super.key,
-    required this.firebaseConfig,
+    // REMOVED: required this.firebaseConfig,
     this.initialAuthToken,
     required this.appId,
+    required Map<String, dynamic> firebaseConfig,
   });
 
   @override
@@ -59,7 +60,6 @@ class _AppHeaderWithMenuState extends State<AppHeaderWithMenu> {
       final directCount = data['direct_sponsor_count'] ?? 0;
       final teamCount = data['total_team_count'] ?? 0;
 
-      // FIXED: 'const' changed to 'final'.
       final int directSponsorMin = AppConstants.projectWideDirectSponsorMin;
       final int totalTeamMin = AppConstants.projectWideTotalTeamMin;
 
@@ -130,9 +130,9 @@ class _AppHeaderWithMenuState extends State<AppHeaderWithMenu> {
                         context,
                         MaterialPageRoute(
                           builder: (_) => DashboardScreen(
-                            firebaseConfig: widget.firebaseConfig,
+                            // REMOVED: firebaseConfig parameter
                             initialAuthToken: currentAuthToken,
-                            appId: widget.appId,
+                            appId: widget.appId, firebaseConfig: {},
                           ),
                         ),
                       );
@@ -142,9 +142,9 @@ class _AppHeaderWithMenuState extends State<AppHeaderWithMenu> {
                         context,
                         MaterialPageRoute(
                             builder: (_) => ProfileScreen(
-                                  firebaseConfig: widget.firebaseConfig,
+                                  // REMOVED: firebaseConfig parameter
                                   initialAuthToken: widget.initialAuthToken,
-                                  appId: widget.appId,
+                                  appId: widget.appId, firebaseConfig: {},
                                 )),
                       );
                       break;
@@ -153,9 +153,9 @@ class _AppHeaderWithMenuState extends State<AppHeaderWithMenu> {
                         context,
                         MaterialPageRoute(
                           builder: (_) => DownlineTeamScreen(
-                            firebaseConfig: widget.firebaseConfig,
+                            // REMOVED: firebaseConfig parameter
                             initialAuthToken: currentAuthToken ?? '',
-                            appId: widget.appId,
+                            appId: widget.appId, firebaseConfig: {},
                           ),
                         ),
                       );
@@ -165,9 +165,9 @@ class _AppHeaderWithMenuState extends State<AppHeaderWithMenu> {
                         context,
                         MaterialPageRoute(
                             builder: (_) => ShareScreen(
-                                  firebaseConfig: widget.firebaseConfig,
+                                  // REMOVED: firebaseConfig parameter
                                   initialAuthToken: widget.initialAuthToken,
-                                  appId: widget.appId,
+                                  appId: widget.appId, firebaseConfig: {},
                                 )),
                       );
                       break;
@@ -176,9 +176,9 @@ class _AppHeaderWithMenuState extends State<AppHeaderWithMenu> {
                         context,
                         MaterialPageRoute(
                             builder: (_) => JoinOpportunityScreen(
-                                  firebaseConfig: widget.firebaseConfig,
+                                  // REMOVED: firebaseConfig parameter
                                   initialAuthToken: widget.initialAuthToken,
-                                  appId: widget.appId,
+                                  appId: widget.appId, firebaseConfig: {},
                                 )),
                       );
                       break;
@@ -187,9 +187,9 @@ class _AppHeaderWithMenuState extends State<AppHeaderWithMenu> {
                         context,
                         MaterialPageRoute(
                             builder: (_) => MessageCenterScreen(
-                                  firebaseConfig: widget.firebaseConfig,
+                                  // REMOVED: firebaseConfig parameter
                                   initialAuthToken: widget.initialAuthToken,
-                                  appId: widget.appId,
+                                  appId: widget.appId, firebaseConfig: {},
                                 )),
                       );
                       break;
@@ -198,9 +198,9 @@ class _AppHeaderWithMenuState extends State<AppHeaderWithMenu> {
                         context,
                         MaterialPageRoute(
                             builder: (_) => NotificationsScreen(
-                                  firebaseConfig: widget.firebaseConfig,
+                                  // REMOVED: firebaseConfig parameter
                                   initialAuthToken: widget.initialAuthToken,
-                                  appId: widget.appId,
+                                  appId: widget.appId, firebaseConfig: {},
                                 )),
                       );
                       break;
@@ -211,8 +211,8 @@ class _AppHeaderWithMenuState extends State<AppHeaderWithMenu> {
                       Navigator.of(context).pushAndRemoveUntil(
                         MaterialPageRoute(
                             builder: (_) => LoginScreen(
-                                  firebaseConfig: widget.firebaseConfig,
-                                  appId: widget.appId,
+                                  // REMOVED: firebaseConfig parameter
+                                  appId: widget.appId, firebaseConfig: {},
                                 )),
                         (route) => false,
                       );

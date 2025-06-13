@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../models/user_model.dart'; // Ensure this is correctly imported
-import 'package:flutter/foundation.dart'; // Import for debugPrint
+import '../models/user_model.dart';
+import 'package:flutter/foundation.dart';
 
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -13,16 +13,19 @@ class FirestoreService {
       }
       return null;
     } catch (e) {
-      debugPrint('Error getting user: $e'); // Changed print to debugPrint
+      debugPrint('Error getting user: $e');
       return null;
     }
   }
 
   Future<void> createUser(Map<String, dynamic> userData) async {
     try {
-      await _db.collection('users').doc(userData['uid']).set(userData, SetOptions(merge: true));
+      await _db
+          .collection('users')
+          .doc(userData['uid'])
+          .set(userData, SetOptions(merge: true));
     } catch (e) {
-      debugPrint('Error creating user: $e'); // Changed print to debugPrint
+      debugPrint('Error creating user: $e');
       rethrow;
     }
   }
@@ -31,7 +34,7 @@ class FirestoreService {
     try {
       await _db.collection('users').doc(uid).update(data);
     } catch (e) {
-      debugPrint('Error updating user: $e'); // Changed print to debugPrint
+      debugPrint('Error updating user: $e');
       rethrow;
     }
   }
@@ -48,50 +51,52 @@ class FirestoreService {
       }
       return null;
     } catch (e) {
-      debugPrint('Error getting user by referral code: $e'); // Changed print to debugPrint
+      debugPrint('Error getting user by referral code: $e');
       return null;
     }
   }
 
   Future<List<String>> getAdminAllowedCountries(String adminUid) async {
     try {
-      DocumentSnapshot doc = await _db.collection('admin_settings').doc(adminUid).get();
+      DocumentSnapshot doc =
+          await _db.collection('admin_settings').doc(adminUid).get();
       if (doc.exists) {
-        // Corrected: Cast doc.data() to Map<String, dynamic> before accessing keys
-        return (doc.data() as Map<String, dynamic>?)?['allowed_countries']?.map((e) => e as String).toList() ?? [];
+        return (doc.data() as Map<String, dynamic>?)?['allowed_countries']
+                ?.map((e) => e as String)
+                .toList() ??
+            [];
       }
       return [];
     } catch (e) {
-      debugPrint('Error getting admin allowed countries: $e'); // Changed print to debugPrint
+      debugPrint('Error getting admin allowed countries: $e');
       return [];
     }
   }
 
-// In your firestore_service.dart file, add this method to the FirestoreService class:
+  Future<void> sendMessage({
+    required String threadId,
+    required String senderId,
+    required String recipientId,
+    required String text,
+    required FieldValue timestamp,
+  }) async {
+    try {
+      await _db.collection('messages').doc(threadId).collection('chat').add({
+        'senderId': senderId,
+        'recipientId': recipientId,
+        'text': text,
+        'timestamp': timestamp,
+        'read': false, // MODIFIED: Mark new messages as unread
+      });
 
-Future<void> sendMessage({
-  required String threadId,
-  required String senderId,
-  required String recipientId,
-  required String text,
-  required FieldValue timestamp, // Use FieldValue.serverTimestamp()
-}) async {
-  try {
-    await _db
-        .collection('messages')
-        .doc(threadId)
-        .collection('chat')
-        .add({
-      'senderId': senderId,
-      'recipientId': recipientId, // Store recipient ID for context/future features
-      'text': text,
-      'timestamp': timestamp,
-    });
-  } catch (e) {
-    debugPrint('Error sending message: $e');
-    rethrow;
+      await _db.collection('messages').doc(threadId).update({
+        'lastMessage': text,
+        'lastMessageSenderId': senderId,
+        'lastUpdatedAt': timestamp,
+      });
+    } catch (e) {
+      debugPrint('Error sending message: $e');
+      rethrow;
+    }
   }
-}
-
-
 }

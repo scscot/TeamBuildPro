@@ -180,19 +180,62 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _submit() async {
+    // Basic form validation (checks for empty fields)
     if (!_formKey.currentState!.validate()) {
       debugPrint('SettingsScreen: Form validation failed locally.');
       return;
     }
 
+    // --- NEW: Business Name Content Validation ---
+    final businessName = _bizNameController.text.trim();
+    // Allows letters, numbers, spaces, and common characters: & ' - . ,
+    final RegExp businessNameRegExp = RegExp(r"^[a-zA-Z0-9\s&'\-.,]+$");
+
+    if (!businessNameRegExp.hasMatch(businessName)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text(
+                'Business name can only contain letters, numbers, and common punctuation.')),
+      );
+      return;
+    }
+
+    // --- NEW: Referral Link URL Validation ---
+    final referralLink = _refLinkController.text.trim();
+    try {
+      final uri = Uri.parse(referralLink);
+      // Check if the URI has a scheme (like http/https) and a host (like example.com)
+      if (!uri.isAbsolute || uri.host.isEmpty) {
+        throw const FormatException('Invalid URL format');
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text(
+                'Please enter a valid referral link (e.g., https://example.com).')),
+      );
+      return;
+    }
+
+    // Confirmation field validation
     if (!_isBizSettingsSet) {
-      if (_bizNameController.text != _bizNameConfirmController.text ||
-          _refLinkController.text != _refLinkConfirmController.text) {
+      if (_bizNameController.text != _bizNameConfirmController.text) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-              content: Text(
-                  'Business Name and Referral Link fields must match for confirmation.')),
+              content:
+                  Text('Business Name fields must match for confirmation.')),
+        );
+        return;
+      }
+      if (_refLinkController.text != _refLinkConfirmController.text) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content:
+                  Text('Referral Link fields must match for confirmation.')),
         );
         return;
       }
@@ -208,6 +251,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
 
+    // Subscription and Firestore submission logic...
     final status = await SubscriptionService.checkAdminSubscriptionStatus(uid);
     final isActive = status['isActive'] == true;
 
@@ -468,37 +512,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               label: const Text("Add a Country"),
               onPressed: _openCountryPicker,
             ),
-            const SizedBox(height: 20),
-            const Text(
-              'TeamBuild Pro Feeder System',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 20),
-            Text.rich(
-              TextSpan(
-                style:
-                    DefaultTextStyle.of(context).style.copyWith(fontSize: 14),
-                children: [
-                  const TextSpan(
-                      text:
-                          "When your downline members meet your eligibility criteria, we automatically invite them to join your "),
-                  TextSpan(
-                    text: _bizOpp ?? 'business opportunity',
-                    style: const TextStyle(
-                        color: Colors.blue, fontWeight: FontWeight.w500),
-                  ),
-                  const TextSpan(
-                      text:
-                          " team — with their pre-built TeamBuild Pro downlines ready to follow."),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-            const Text(
-              'Minimum Eligibility Requirements',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 12),
             const SizedBox(height: 24),
             Center(
               child: Padding(
@@ -532,7 +545,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 ListTile(
                   leading: const Icon(Icons.business, color: Colors.blue),
-                  title: const Text('Business Opportunity Name'),
+                  title: const Text('Your Business Opportunity'),
                   subtitle: Text(
                     _bizOpp ?? 'Not Set',
                     style: const TextStyle(fontSize: 16, color: Colors.black87),
@@ -541,7 +554,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const Divider(height: 1, indent: 16, endIndent: 16),
                 ListTile(
                   leading: const Icon(Icons.link, color: Colors.blue),
-                  title: const Text('Your Unique Referral Link URL'),
+                  title: const Text('Your Referral Link'),
                   subtitle: SelectableText(
                     _bizRefUrl ?? 'Not Set',
                     style: const TextStyle(fontSize: 14, color: Colors.black54),
@@ -584,29 +597,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
           else
             const Text('No countries selected.',
                 style: TextStyle(fontSize: 16, color: Colors.grey)),
-          const SizedBox(height: 24),
+          const SizedBox(height: 10),
           const Text(
             'TeamBuild Pro Feeder System',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 20),
-          Text.rich(
-            TextSpan(
-              style: DefaultTextStyle.of(context).style.copyWith(fontSize: 14),
-              children: [
-                const TextSpan(
-                    text:
-                        "When your downline members meet your eligibility criteria, we automatically invite them to join your "),
-                TextSpan(
-                  text: _bizOpp ?? 'business opportunity',
-                  style: const TextStyle(
-                      color: Colors.blue, fontWeight: FontWeight.w500),
+          // FIXED: Wrapped the Text.rich widget in a Row and Expanded
+          Row(
+            children: [
+              Expanded(
+                child: Text.rich(
+                  TextSpan(
+                    children: [
+                      const TextSpan(
+                          text:
+                              "When your downline members meet the minimum eligibility criteria, they are automatically invited to join your "),
+                      TextSpan(
+                        text: _bizOpp ?? 'business opportunity',
+                        style: const TextStyle(
+                            color: Colors.blue, fontWeight: FontWeight.w500),
+                      ),
+                      const TextSpan(
+                          text:
+                              " team — with their growing TeamBuild Pro downlines ready to follow."),
+                    ],
+                  ),
                 ),
-                const TextSpan(
-                    text:
-                        " team — with their pre-built TeamBuild Pro downlines ready to follow."),
-              ],
-            ),
+              ),
+            ],
           ),
           const SizedBox(height: 24),
           const Text(

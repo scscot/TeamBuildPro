@@ -28,7 +28,6 @@ void main() async {
   runApp(const MyApp());
 }
 
-
 Future<void> _initializeFCM() async {
   FirebaseMessaging messaging = FirebaseMessaging.instance;
 
@@ -39,7 +38,8 @@ Future<void> _initializeFCM() async {
     sound: true,
   );
 
-  debugPrint('🔐 Notification permission status: ${settings.authorizationStatus}');
+  debugPrint(
+      '🔐 Notification permission status: ${settings.authorizationStatus}');
 
   if (settings.authorizationStatus == AuthorizationStatus.authorized) {
     final token = await messaging.getToken();
@@ -73,7 +73,8 @@ Future<void> _initializeFCM() async {
 
   // Optional: Foreground listener
   FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-    debugPrint('📩 Foreground FCM Message Received: ${message.notification?.title}');
+    debugPrint(
+        '📩 Foreground FCM Message Received: ${message.notification?.title}');
     // Add local UI/alert logic here if needed
   });
 }
@@ -86,14 +87,17 @@ class MyApp extends StatelessWidget {
     final isLoggedIn = user != null && user.uid.isNotEmpty;
 
     if (isLoggedIn) {
-      final String? initialAuthToken = await FirebaseAuth.instance.currentUser?.getIdToken();
-      return DashboardScreen( // Pass required args to DashboardScreen
+      final String? initialAuthToken =
+          await FirebaseAuth.instance.currentUser?.getIdToken();
+      return DashboardScreen(
+        // Pass required args to DashboardScreen
         firebaseConfig: firebaseConfig,
         initialAuthToken: initialAuthToken,
         appId: firebaseConfig['projectId'] as String,
       );
     } else {
-      return LoginScreen( // Pass required args to LoginScreen
+      return LoginScreen(
+        // Pass required args to LoginScreen
         firebaseConfig: firebaseConfig,
         appId: firebaseConfig['projectId'] as String,
       );
@@ -131,10 +135,11 @@ class MyApp extends StatelessWidget {
             );
           } else {
             // Provide fallback if snapshot.data is null (e.g., in case of an unexpected error)
-            return snapshot.data ?? LoginScreen(
-              firebaseConfig: firebaseConfig,
-              appId: firebaseConfig['projectId'] as String,
-            );
+            return snapshot.data ??
+                LoginScreen(
+                  firebaseConfig: firebaseConfig,
+                  appId: firebaseConfig['projectId'] as String,
+                );
           }
         },
       ),

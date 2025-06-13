@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:async';
 import '../screens/downline_team_screen.dart';
 import '../screens/profile_screen.dart';
 import '../screens/share_screen.dart';
@@ -15,15 +16,15 @@ import '../screens/notifications_screen.dart';
 import '../config/app_constants.dart';
 
 class DashboardScreen extends StatefulWidget {
-  final Map<String, dynamic> firebaseConfig;
+  // REMOVED: firebaseConfig parameter
   final String? initialAuthToken;
   final String appId;
 
   const DashboardScreen({
     super.key,
-    required this.firebaseConfig,
     this.initialAuthToken,
     required this.appId,
+    required Map firebaseConfig,
   });
 
   @override
@@ -34,12 +35,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
   UserModel? _user;
   bool _isLoading = true;
   int _unreadNotificationCount = 0;
+  bool _hasUnreadMessages = false;
+  StreamSubscription? _unreadMessagesSubscription;
 
   @override
   void initState() {
     super.initState();
     _loadUserAndSettings();
     _fetchUnreadNotificationCount();
+  }
+
+  @override
+  void dispose() {
+    _unreadMessagesSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadUserAndSettings() async {
@@ -52,6 +61,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
       return;
     }
+
+    _listenForUnreadMessages(sessionUser.uid);
 
     try {
       final userDoc = await FirebaseFirestore.instance
@@ -75,6 +86,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
+  void _listenForUnreadMessages(String currentUserId) {
+    final query = FirebaseFirestore.instance
+        .collectionGroup('chat')
+        .where('recipientId', isEqualTo: currentUserId)
+        .where('read', isEqualTo: false)
+        .limit(1);
+
+    _unreadMessagesSubscription = query.snapshots().listen((snapshot) {
+      if (mounted) {
+        setState(() {
+          _hasUnreadMessages = snapshot.docs.isNotEmpty;
+        });
+      }
+    }, onError: (error) {
+      debugPrint("Error listening for unread messages: $error");
+    });
+  }
+
   Future<void> _fetchUnreadNotificationCount() async {
     final user = await SessionManager().getCurrentUser();
     if (user == null) return;
@@ -86,7 +115,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         .where('read', isEqualTo: false)
         .snapshots()
         .listen((snapshot) {
-      // FIXED: Added curly braces to satisfy the linting rule.
       if (mounted) {
         setState(() => _unreadNotificationCount = snapshot.docs.length);
       }
@@ -148,9 +176,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     return Scaffold(
       appBar: AppHeaderWithMenu(
-        firebaseConfig: widget.firebaseConfig,
         initialAuthToken: widget.initialAuthToken,
         appId: widget.appId,
+        firebaseConfig: {},
       ),
       body: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -179,9 +207,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   context,
                   MaterialPageRoute(
                     builder: (_) => DownlineTeamScreen(
-                      firebaseConfig: widget.firebaseConfig,
                       initialAuthToken: currentAuthToken ?? '',
                       appId: widget.appId,
+                      firebaseConfig: {},
                     ),
                   ),
                 );
@@ -194,23 +222,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 context,
                 MaterialPageRoute(
                     builder: (_) => ShareScreen(
-                          firebaseConfig: widget.firebaseConfig,
                           initialAuthToken: widget.initialAuthToken,
                           appId: widget.appId,
+                          firebaseConfig: {},
                         )),
               ),
             ),
             buildButton(
               icon: Icons.message,
               label: 'Message Center',
+              showRedDot: _hasUnreadMessages,
               onPressed: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (context) => MessageCenterScreen(
-                      firebaseConfig: widget.firebaseConfig,
                       initialAuthToken: widget.initialAuthToken,
                       appId: widget.appId,
+                      firebaseConfig: {},
                     ),
                   ),
                 );
@@ -225,9 +254,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   context,
                   MaterialPageRoute(
                     builder: (context) => NotificationsScreen(
-                      firebaseConfig: widget.firebaseConfig,
                       initialAuthToken: widget.initialAuthToken,
                       appId: widget.appId,
+                      firebaseConfig: {},
                     ),
                   ),
                 );
@@ -240,9 +269,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 context,
                 MaterialPageRoute(
                     builder: (_) => ProfileScreen(
-                          firebaseConfig: widget.firebaseConfig,
                           initialAuthToken: widget.initialAuthToken,
                           appId: widget.appId,
+                          firebaseConfig: {},
                         )),
               ),
             ),
@@ -254,9 +283,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   context,
                   MaterialPageRoute(
                       builder: (_) => SettingsScreen(
-                            firebaseConfig: widget.firebaseConfig,
                             initialAuthToken: widget.initialAuthToken,
                             appId: widget.appId,
+                            firebaseConfig: {},
                           )),
                 ),
               ),
@@ -276,9 +305,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       context,
                       MaterialPageRoute(
                           builder: (_) => MyBizScreen(
-                                firebaseConfig: widget.firebaseConfig,
                                 initialAuthToken: widget.initialAuthToken,
                                 appId: widget.appId,
+                                firebaseConfig: {},
                               )),
                     );
                   } else {
@@ -286,9 +315,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       context,
                       MaterialPageRoute(
                           builder: (_) => JoinOpportunityScreen(
-                                firebaseConfig: widget.firebaseConfig,
                                 initialAuthToken: widget.initialAuthToken,
                                 appId: widget.appId,
+                                firebaseConfig: {},
                               )),
                     );
                   }

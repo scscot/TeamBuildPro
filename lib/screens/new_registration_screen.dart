@@ -59,7 +59,8 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
   Future<void> _initReferral() async {
     if (isDevMode && widget.referralCode == null) {
       setState(() {
-        _referredBy = 'KJ8uFnlhKhWgBa4NVcwT'; // Example: Your admin's referral code
+        _referredBy =
+            'KJ8uFnlhKhWgBa4NVcwT'; // Example: Your admin's referral code
       });
     }
 
@@ -161,7 +162,7 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
 
       final isAdmin = userDoc.role == 'admin';
       final direct = userDoc.directSponsorCount; // Corrected to camelCase
-      final total = userDoc.totalTeamCount;     // Corrected to camelCase
+      final total = userDoc.totalTeamCount; // Corrected to camelCase
       final directMin = 5;
       final totalMin = 20;
       final qualified = userDoc.qualifiedDate != null;
@@ -223,7 +224,7 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
         referredBy: referredBy,
         level: level,
         directSponsorCount: 0, // Corrected to camelCase
-        totalTeamCount: 0,     // Corrected to camelCase
+        totalTeamCount: 0, // Corrected to camelCase
         role: _role ?? 'user',
         uplineAdmin: uplineAdmin,
       );
@@ -237,15 +238,17 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
       await SessionManager().setCurrentUser(newUser);
 
       if (mounted) {
-        final String? currentAuthToken = await FirebaseAuth.instance.currentUser?.getIdToken();
+        final String? currentAuthToken =
+            await FirebaseAuth.instance.currentUser?.getIdToken();
         Navigator.pushReplacement(
           // ignore: use_build_context_synchronously
           context,
-          MaterialPageRoute(builder: (_) => DashboardScreen(
-            firebaseConfig: widget.firebaseConfig,
-            appId: widget.appId,
-            initialAuthToken: currentAuthToken,
-          )),
+          MaterialPageRoute(
+              builder: (_) => DashboardScreen(
+                    firebaseConfig: widget.firebaseConfig,
+                    appId: widget.appId,
+                    initialAuthToken: currentAuthToken,
+                  )),
         );
       }
     } catch (e) {

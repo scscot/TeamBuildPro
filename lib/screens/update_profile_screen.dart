@@ -2,11 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../widgets/header_widgets.dart';
-import 'my_biz_screen.dart'; // Ensure this screen exists
-import '../models/user_model.dart'; // Still needed for currentUserModel.bizOppRefUrl
+import 'my_biz_screen.dart';
+import '../models/user_model.dart';
 
 class UpdateProfileScreen extends StatefulWidget {
-  // Add required parameters for consistency with current app navigation
   final Map<String, dynamic> firebaseConfig;
   final String? initialAuthToken;
   final String appId;
@@ -30,10 +29,8 @@ class _UpdateProfileScreenState extends State<UpdateProfileScreen> {
   String? baseUrl;
   String? bizOpp;
   bool isSaving = false;
-  // bool isUnlocked = false; // REMOVED: isUnlocked declaration
   bool _hasShownInfoModal = false;
 
-  // Define your central admin UID as a constant (still used for fetching admin settings)
   static const String _primaryAdminUid = "KJ8uFnlhKhWgBa4NVcwT";
 
   @override
@@ -89,10 +86,8 @@ class _UpdateProfileScreenState extends State<UpdateProfileScreen> {
         if (mounted) setState(() {});
         return;
       }
-      final currentUserModel = UserModel.fromFirestore(
-          currentUserDoc); // Still need UserModel to get bizOppRefUrl
+      final currentUserModel = UserModel.fromFirestore(currentUserDoc);
 
-      // Determine the admin UID to fetch base URL and bizOpp name from
       String? adminUidForBizOppSettings = currentUserModel.uplineAdmin;
       if (currentUserModel.role == 'admin') {
         adminUidForBizOppSettings = currentUserModel.uid;
@@ -112,7 +107,6 @@ class _UpdateProfileScreenState extends State<UpdateProfileScreen> {
       if (!mounted) return;
 
       setState(() {
-        // Load bizOpp and baseUrl from admin_settings
         if (adminSettingsDoc != null && adminSettingsDoc.exists) {
           final adminSettingsData = adminSettingsDoc.data();
           final String? fetchedBaseUrl =
@@ -134,7 +128,6 @@ class _UpdateProfileScreenState extends State<UpdateProfileScreen> {
               'UpdateProfileScreen: Admin settings document $adminUidForBizOppSettings not found. Using defaults.');
         }
 
-        // Pre-fill fields with current user's *own* saved link from their user document
         if (currentUserModel.bizOppRefUrl != null &&
             currentUserModel.bizOppRefUrl!.isNotEmpty) {
           _refLinkController.text = currentUserModel.bizOppRefUrl!;
@@ -159,13 +152,33 @@ class _UpdateProfileScreenState extends State<UpdateProfileScreen> {
   }
 
   Future<void> _submitReferral() async {
-    // Perform form validation first
+    // Perform basic form validation first (empty checks, etc.)
     if (!_formKey.currentState!.validate()) {
       debugPrint('UpdateProfileScreen: Form validation failed.');
       return;
     }
 
-    // Now check button-disabling conditions that were not part of Form validation
+    final userInput = _refLinkController.text.trim();
+    final confirmInput = _refLinkConfirmController.text.trim();
+
+    // --- NEW: URI format validation ---
+    try {
+      final uri = Uri.parse(userInput);
+      // Check if the URI has a scheme (like http/https) and a host (like example.com)
+      if (!uri.isAbsolute || uri.host.isEmpty) {
+        throw const FormatException('URL must be absolute and have a host.');
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text(
+                'Please enter a valid and complete URL (e.g., https://example.com).')),
+      );
+      return;
+    }
+
+    // Check if the button-disabling conditions are met
     if (baseUrl == null) {
       debugPrint(
           'UpdateProfileScreen: Base URL is null, cannot submit. Admin settings not loaded.');
@@ -178,37 +191,7 @@ class _UpdateProfileScreenState extends State<UpdateProfileScreen> {
       return;
     }
 
-    // REMOVED: isUnlocked check
-    // if (!isUnlocked) {
-    //   debugPrint('UpdateProfileScreen: User is not unlocked. Showing upgrade dialog.');
-    //   if (!mounted) return;
-    //   showDialog(
-    //     context: context,
-    //     builder: (_) => AlertDialog(
-    //       title: const Text('Upgrade Required'),
-    //       content: const Text(
-    //           'You must upgrade your TeamBuild Pro account to submit your unique business referral link.'),
-    //       actions: [
-    //         TextButton(
-    //           onPressed: () => Navigator.of(context).pop(),
-    //           child: const Text('Cancel'),
-    //         ),
-    //         ElevatedButton(
-    //           onPressed: () {
-    //             Navigator.of(context).pop();
-    //             Navigator.pushNamed(context, '/upgrade');
-    //           },
-    //           child: const Text('Upgrade Now'),
-    //         ),
-    //       ],
-    //     ),
-    //   );
-    //   return;
-    // }
-
-    final userInput = _refLinkController.text.trim();
-    final confirmInput = _refLinkConfirmController.text.trim();
-
+    // Check if confirmation fields match
     if (userInput != confirmInput) {
       debugPrint(
           'UpdateProfileScreen: Referral links do not match. (pre-submit check)');
@@ -230,6 +213,7 @@ class _UpdateProfileScreenState extends State<UpdateProfileScreen> {
       return;
     }
 
+    // Check if user's link starts with the required base URL
     if (!userInput.startsWith(baseUrl!)) {
       debugPrint(
           'UpdateProfileScreen: Referral link does not start with base URL. (pre-submit check)');
@@ -269,7 +253,7 @@ class _UpdateProfileScreenState extends State<UpdateProfileScreen> {
           .update({
         'biz_opp_ref_url': userInput,
         'biz_join_date': FieldValue.serverTimestamp(),
-        'biz_opp': bizOpp, // Save bizOpp name to user's profile
+        'biz_opp': bizOpp,
       });
 
       debugPrint('UpdateProfileScreen: Referral link saved successfully.');
@@ -308,7 +292,6 @@ class _UpdateProfileScreenState extends State<UpdateProfileScreen> {
     return Scaffold(
       backgroundColor: Theme.of(context).canvasColor,
       appBar: AppHeaderWithMenu(
-        // Pass required args
         firebaseConfig: widget.firebaseConfig,
         initialAuthToken: widget.initialAuthToken,
         appId: widget.appId,
@@ -318,7 +301,6 @@ class _UpdateProfileScreenState extends State<UpdateProfileScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Page Title
             Center(
               child: Text(
                 'Add Unique Referral Link',
@@ -331,8 +313,6 @@ class _UpdateProfileScreenState extends State<UpdateProfileScreen> {
               ),
             ),
             const SizedBox(height: 24),
-
-            // Main Content Card
             Card(
               elevation: 8,
               shape: RoundedRectangleBorder(
@@ -345,11 +325,9 @@ class _UpdateProfileScreenState extends State<UpdateProfileScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Instructions
                       Center(
                         child: Text(
-                          bizOpp ??
-                              'Your Business Opportunity', // Default if bizOpp is null
+                          bizOpp ?? 'Your Business Opportunity',
                           style: const TextStyle(
                             fontSize: 20,
                             color: Colors.black,
@@ -358,12 +336,10 @@ class _UpdateProfileScreenState extends State<UpdateProfileScreen> {
                         ),
                       ),
                       const SizedBox(height: 24),
-
-                      // Referral Link Input Field
                       TextFormField(
                         controller: _refLinkController,
                         keyboardType: TextInputType.url,
-                        onTap: _onReferralLinkTap, // Show modal on first tap
+                        onTap: _onReferralLinkTap,
                         decoration: InputDecoration(
                           labelText: 'Your Unique Referral Link URL',
                           hintText: baseUrl != null
@@ -383,10 +359,7 @@ class _UpdateProfileScreenState extends State<UpdateProfileScreen> {
                           return null;
                         },
                       ),
-                      const SizedBox(
-                          height: 16), // Spacing between the two URL fields
-
-                      // Confirm Referral Link Input Field (NEW)
+                      const SizedBox(height: 16),
                       TextFormField(
                         controller: _refLinkConfirmController,
                         keyboardType: TextInputType.url,
@@ -411,11 +384,8 @@ class _UpdateProfileScreenState extends State<UpdateProfileScreen> {
                         },
                       ),
                       const SizedBox(height: 32),
-
-                      // Submit Button
                       Center(
                         child: ElevatedButton.icon(
-                          // Simplified onPressed: removed !isUnlocked condition
                           onPressed: isSaving || baseUrl == null
                               ? null
                               : _submitReferral,
@@ -438,8 +408,7 @@ class _UpdateProfileScreenState extends State<UpdateProfileScreen> {
                             foregroundColor:
                                 WidgetStateProperty.all<Color>(Colors.white),
                             backgroundColor: WidgetStateProperty.all<Color>(
-                                const Color.fromARGB(
-                                    255, 109, 58, 204)), // Lavender hex color
+                                const Color.fromARGB(255, 109, 58, 204)),
                             padding:
                                 WidgetStateProperty.all<EdgeInsetsGeometry>(
                                     const EdgeInsets.symmetric(

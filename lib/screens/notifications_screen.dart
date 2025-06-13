@@ -58,7 +58,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           .collection('users')
           .doc(uid)
           .collection('notifications')
-          .orderBy('createdAt', descending: true) // Changed to 'createdAt' as per typical notification field
+          .orderBy('createdAt',
+              descending:
+                  true) // Changed to 'createdAt' as per typical notification field
           .get();
       return snapshot.docs;
     } catch (e) {
@@ -72,7 +74,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Widget build(BuildContext context) {
     if (_uid == null || _notificationsFuture == null) {
       return Scaffold(
-        appBar: AppHeaderWithMenu( // Pass required args
+        appBar: AppHeaderWithMenu(
+          // Pass required args
           firebaseConfig: widget.firebaseConfig,
           initialAuthToken: widget.initialAuthToken,
           appId: widget.appId,
@@ -82,7 +85,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
 
     return Scaffold(
-      appBar: AppHeaderWithMenu( // Pass required args
+      appBar: AppHeaderWithMenu(
+        // Pass required args
         firebaseConfig: widget.firebaseConfig,
         initialAuthToken: widget.initialAuthToken,
         appId: widget.appId,
@@ -105,7 +109,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               future: _notificationsFuture,
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
-                  debugPrint('FutureBuilder Error loading notifications: ${snapshot.error}');
+                  debugPrint(
+                      'FutureBuilder Error loading notifications: ${snapshot.error}');
                   return const Center(
                       child: Text('Error loading notifications'));
                 }
@@ -127,9 +132,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     final data = doc.data() as Map<String, dynamic>;
                     // Use 'createdAt' as the timestamp field as per common notification structure
                     // and your UserModel's createdAt field.
-                    final timestamp = (data['createdAt'] as Timestamp?)?.toDate().toLocal();
+                    final timestamp =
+                        (data['createdAt'] as Timestamp?)?.toDate().toLocal();
                     final String formattedTime = timestamp != null
-                        ? DateFormat.yMMMMd().add_jm().format(timestamp) // Format both date and time
+                        ? DateFormat.yMMMMd()
+                            .add_jm()
+                            .format(timestamp) // Format both date and time
                         : 'N/A';
 
                     return Card(
@@ -152,7 +160,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                           size: 28,
                         ),
                         title: Text(
-                          data['title'] ?? 'No Title', // Provide default for missing title
+                          data['title'] ??
+                              'No Title', // Provide default for missing title
                           style: const TextStyle(
                             fontWeight: FontWeight.w600,
                             fontSize: 15,
@@ -162,7 +171,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const SizedBox(height: 6),
-                            Text(data['body'] ?? data['message'] ?? 'No message content.', // Prioritize 'body' or 'message'
+                            Text(
+                                data['body'] ??
+                                    data['message'] ??
+                                    'No message content.', // Prioritize 'body' or 'message'
                                 style: const TextStyle(fontSize: 13)),
                             const SizedBox(height: 6),
                             Text(
@@ -179,11 +191,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                             // Guarded context usage
                             if (!mounted) return;
                             if (_uid == null) {
-                                debugPrint('Cannot delete notification: User UID is null.');
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Cannot delete notification: User not identified.')),
-                                );
-                                return;
+                              debugPrint(
+                                  'Cannot delete notification: User UID is null.');
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content: Text(
+                                        'Cannot delete notification: User not identified.')),
+                              );
+                              return;
                             }
                             await FirebaseFirestore.instance
                                 .collection('users')
@@ -194,7 +209,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                             // Re-fetch notifications after deletion to update UI
                             if (mounted) {
                               setState(() {
-                                _notificationsFuture = _fetchNotifications(_uid!);
+                                _notificationsFuture =
+                                    _fetchNotifications(_uid!);
                               });
                             }
                           },
@@ -203,12 +219,15 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                           // Guarded context usage
                           if (!mounted) return;
                           if (_uid == null) {
-                                debugPrint('Cannot mark notification read: User UID is null.');
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Cannot read notification: User not identified.')),
-                                );
-                                return;
-                            }
+                            debugPrint(
+                                'Cannot mark notification read: User UID is null.');
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text(
+                                      'Cannot read notification: User not identified.')),
+                            );
+                            return;
+                          }
                           await FirebaseFirestore.instance
                               .collection('users')
                               .doc(_uid)
@@ -221,7 +240,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                             context: context,
                             builder: (_) => AlertDialog(
                               title: Text(data['title'] ?? 'Notification'),
-                              content: Text(data['body'] ?? data['message'] ?? 'No message content.'),
+                              content: Text(data['body'] ??
+                                  data['message'] ??
+                                  'No message content.'),
                               actions: [
                                 TextButton(
                                   onPressed: () => Navigator.of(context).pop(),
