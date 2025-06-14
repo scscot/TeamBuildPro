@@ -17,13 +17,13 @@ import 'edit_profile_screen.dart';
 import '../widgets/header_widgets.dart';
 
 class ProfileScreen extends StatefulWidget {
-  final Map<String, dynamic> firebaseConfig;
+  // final Map<String, dynamic> firebaseConfig;
   final String? initialAuthToken;
   final String appId;
 
   const ProfileScreen({
     super.key,
-    required this.firebaseConfig,
+    // required this.firebaseConfig,
     this.initialAuthToken,
     required this.appId,
   });
@@ -220,7 +220,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           MaterialPageRoute(
               builder: (_) => EditProfileScreen(
                     user: _user!,
-                    firebaseConfig: widget.firebaseConfig,
+                    // firebaseConfig: widget.firebaseConfig,
                     initialAuthToken: widget.initialAuthToken,
                     appId: widget.appId,
                   )),
@@ -251,7 +251,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   MaterialPageRoute(
                     builder: (_) => MemberDetailScreen(
                       userId: userId,
-                      firebaseConfig: widget.firebaseConfig,
+                      // firebaseConfig: widget.firebaseConfig,
                       initialAuthToken: widget.initialAuthToken,
                       appId: widget.appId,
                     ),
@@ -305,7 +305,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     return Scaffold(
       appBar: AppHeaderWithMenu(
-        firebaseConfig: widget.firebaseConfig,
+        // firebaseConfig: widget.firebaseConfig,
         initialAuthToken: widget.initialAuthToken,
         appId: widget.appId,
       ),

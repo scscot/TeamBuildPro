@@ -1,26 +1,20 @@
 import 'package:flutter/material.dart';
-import 'package:uuid/uuid.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart'; // Added missing import
-import '../models/user_model.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
-import '../services/firestore_service.dart';
 import '../services/session_manager.dart';
 import '../data/states_by_country.dart';
 import 'dashboard_screen.dart';
-// import '../main.dart' as main_app; // Removed unused import
 
 class NewRegistrationScreen extends StatefulWidget {
   final String? referralCode;
-  final Map<String, dynamic> firebaseConfig;
   final String appId;
 
   const NewRegistrationScreen({
     super.key,
     this.referralCode,
-    required this.firebaseConfig,
     required this.appId,
   });
 
@@ -41,9 +35,8 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
   String? _selectedCountry;
   String? _selectedState;
   String? _sponsorName;
-  String? _referredBy;
-  String? _role;
-  String? _uplineAdmin;
+  String? _initialReferralCode;
+  bool _isFirstUser = false;
   List<String> _availableCountries = [];
   bool _isLoading = false;
   bool isDevMode = true;
@@ -53,66 +46,58 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
   @override
   void initState() {
     super.initState();
+    _initialReferralCode = widget.referralCode;
     _initReferral();
   }
 
   Future<void> _initReferral() async {
-    if (isDevMode && widget.referralCode == null) {
-      setState(() {
-        _referredBy =
-            'KJ8uFnlhKhWgBa4NVcwT'; // Example: Your admin's referral code
-      });
+    if (isDevMode && _initialReferralCode == null) {
+      _initialReferralCode = 'KJ8uFnlhKhWgBa4NVcwT';
     }
-
-    final code = widget.referralCode ?? _referredBy;
+    final code = _initialReferralCode;
     if (code == null || code.isEmpty) {
-      setState(() => _role = 'admin');
+      setState(() {
+        _isFirstUser = true;
+        _availableCountries = statesByCountry.keys.toList();
+      });
       return;
     }
-
     try {
       final uri = Uri.parse(
           'https://us-central1-teambuilder-plus-fe74d.cloudfunctions.net/getUserByReferralCode?code=$code');
       final response = await http.get(uri);
       if (!mounted) return;
-
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final sponsorName =
             '${data['firstName'] ?? ''} ${data['lastName'] ?? ''}'.trim();
-        final referredBy = code;
+        setState(() => _sponsorName = sponsorName);
         final uplineAdminUid = data['upline_admin'];
-
-        setState(() {
-          _sponsorName = sponsorName;
-          _referredBy = referredBy;
-          _uplineAdmin = uplineAdminUid;
-          _role = null;
-        });
-
         if (uplineAdminUid != null) {
           final countriesResponse = await http.get(Uri.parse(
               'https://us-central1-teambuilder-plus-fe74d.cloudfunctions.net/getCountriesByAdminUid?uid=$uplineAdminUid'));
           if (!mounted) return;
-
           if (countriesResponse.statusCode == 200) {
             final countryData = jsonDecode(countriesResponse.body);
-            final countries = countryData['countries'];
-            if (countries is List) {
-              setState(
-                  () => _availableCountries = List<String>.from(countries));
+            if (countryData['countries'] is List) {
+              setState(() => _availableCountries =
+                  List<String>.from(countryData['countries']));
             }
           }
         }
       } else {
-        debugPrint('❌ Referral lookup failed: ${response.statusCode}');
-        if (!mounted) return;
-        setState(() => _role = 'admin');
+        setState(() {
+          _isFirstUser = true;
+          _availableCountries = statesByCountry.keys.toList();
+        });
       }
     } catch (e) {
-      debugPrint('❌ Error in getUserByReferralCode: $e');
-      if (!mounted) return;
-      setState(() => _role = 'admin');
+      if (mounted) {
+        setState(() {
+          _isFirstUser = true;
+          _availableCountries = statesByCountry.keys.toList();
+        });
+      }
     }
   }
 
@@ -127,139 +112,48 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
     super.dispose();
   }
 
-  Future<int> _getReferrerLevel(String? referralCode) async {
-    if (referralCode == null || referralCode.isEmpty) return 1;
-    final referrer =
-        await FirestoreService().getUserByReferralCode(referralCode);
-    if (referrer != null && referrer.level != null) {
-      return referrer.level! + 1;
-    }
-    return 1;
-  }
-
-  Future<void> _callSecureSponsorUpdate(String referralCode) async {
-    try {
-      final uri = Uri.parse(
-          'https://us-central1-teambuilder-plus-fe74d.cloudfunctions.net/incrementSponsorCounts');
-      final response = await http.post(uri,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'referralCode': referralCode}));
-      debugPrint(
-          '🔄 Sponsor update response: ${response.statusCode} ${response.body}');
-    } catch (e) {
-      debugPrint('❌ Error calling incrementSponsorCounts: $e');
-    }
-  }
-
-  Future<void> _qualifyUpline(String? referredBy) async {
-    if (referredBy == null || referredBy.isEmpty) return;
-    String? currentUid = referredBy;
-
-    while (currentUid != null && currentUid.isNotEmpty) {
-      final userDoc =
-          await FirestoreService().getUserByReferralCode(currentUid);
-      if (userDoc == null) break;
-
-      final isAdmin = userDoc.role == 'admin';
-      final direct = userDoc.directSponsorCount; // Corrected to camelCase
-      final total = userDoc.totalTeamCount; // Corrected to camelCase
-      final directMin = 5;
-      final totalMin = 20;
-      final qualified = userDoc.qualifiedDate != null;
-
-      if (!isAdmin && !qualified && direct >= directMin && total >= totalMin) {
-        await FirestoreService().updateUser(
-            userDoc.uid, {'qualified_date': FieldValue.serverTimestamp()});
-      }
-      currentUid = userDoc.referredBy;
-    }
-  }
-
-  Future<String> _generateUniqueReferralCode() async {
-    const int maxAttempts = 10;
-    const int codeLength = 6;
-    final random = Uuid();
-
-    for (int i = 0; i < maxAttempts; i++) {
-      final code = random
-          .v4()
-          .replaceAll('-', '')
-          .substring(0, codeLength)
-          .toUpperCase();
-      final snapshot = await FirebaseFirestore.instance
-          .collection('users')
-          .where('referralCode', isEqualTo: code)
-          .limit(1)
-          .get();
-      if (snapshot.docs.isEmpty) return code;
-    }
-    throw Exception(
-        'Unable to generate unique referral code after $maxAttempts attempts');
-  }
-
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
-
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
     try {
-      final email = _emailController.text.trim();
-      final password = _passwordController.text.trim();
-
-      UserModel user = await AuthService().register(email, password);
-      final referredBy = _referredBy;
-      final level = await _getReferrerLevel(referredBy);
-      final referralCode = await _generateUniqueReferralCode();
-      final uplineAdmin = _role == 'admin' ? user.uid : _uplineAdmin;
-
-      final newUser = UserModel(
-        uid: user.uid,
-        firstName: _firstNameController.text.trim(),
-        lastName: _lastNameController.text.trim(),
-        email: email,
-        createdAt: DateTime.now(),
-        country: _selectedCountry,
-        state: _selectedState,
-        city: _cityController.text.trim(),
-        referralCode: referralCode,
-        referredBy: referredBy,
-        level: level,
-        directSponsorCount: 0, // Corrected to camelCase
-        totalTeamCount: 0, // Corrected to camelCase
-        role: _role ?? 'user',
-        uplineAdmin: uplineAdmin,
-      );
-
-      await FirestoreService().createUser(newUser.toMap());
-
-      if (referredBy != null && referredBy.isNotEmpty) {
-        await _callSecureSponsorUpdate(referredBy);
-      }
-      await _qualifyUpline(referredBy);
-      await SessionManager().setCurrentUser(newUser);
-
+      final HttpsCallable callable =
+          FirebaseFunctions.instance.httpsCallable('registerUser');
+      await callable.call(<String, dynamic>{
+        'email': email,
+        'password': password,
+        'firstName': _firstNameController.text.trim(),
+        'lastName': _lastNameController.text.trim(),
+        'country': _selectedCountry,
+        'state': _selectedState,
+        'city': _cityController.text.trim(),
+        'referralCode': _initialReferralCode,
+      });
+      final user = await AuthService().login(email, password);
+      await SessionManager().setCurrentUser(user);
+      final currentAuthToken =
+          await FirebaseAuth.instance.currentUser?.getIdToken();
       if (mounted) {
-        final String? currentAuthToken =
-            await FirebaseAuth.instance.currentUser?.getIdToken();
         Navigator.pushReplacement(
-          // ignore: use_build_context_synchronously
           context,
           MaterialPageRoute(
               builder: (_) => DashboardScreen(
-                    firebaseConfig: widget.firebaseConfig,
-                    appId: widget.appId,
-                    initialAuthToken: currentAuthToken,
-                  )),
+                  appId: widget.appId, initialAuthToken: currentAuthToken)),
         );
       }
-    } catch (e) {
-      debugPrint('❌ Registration error: $e');
+    } on FirebaseFunctionsException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Registration failed: $e')),
-        );
+            SnackBar(content: Text(e.message ?? 'An unknown error occurred.')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('An unexpected error occurred: $e')));
       }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -279,7 +173,7 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
                   child: Text('Your Sponsor is $_sponsorName',
                       style: const TextStyle(fontWeight: FontWeight.bold)),
                 )
-              else if (_role == 'admin')
+              else if (_isFirstUser)
                 const Padding(
                   padding: EdgeInsets.only(bottom: 12.0),
                   child: Text(
@@ -287,79 +181,69 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
                       style: TextStyle(fontWeight: FontWeight.bold)),
                 ),
               TextFormField(
-                controller: _firstNameController,
-                decoration: const InputDecoration(labelText: 'First Name'),
-                validator: (value) => value == null || value.isEmpty
-                    ? 'Enter your first name'
-                    : null,
-              ),
+                  controller: _firstNameController,
+                  decoration: const InputDecoration(labelText: 'First Name'),
+                  validator: (v) => v == null || v.isEmpty ? 'Required' : null),
               const SizedBox(height: 12),
               TextFormField(
-                controller: _lastNameController,
-                decoration: const InputDecoration(labelText: 'Last Name'),
-                validator: (value) => value == null || value.isEmpty
-                    ? 'Enter your last name'
-                    : null,
-              ),
+                  controller: _lastNameController,
+                  decoration: const InputDecoration(labelText: 'Last Name'),
+                  validator: (v) => v == null || v.isEmpty ? 'Required' : null),
               const SizedBox(height: 12),
               TextFormField(
-                controller: _emailController,
-                decoration: const InputDecoration(labelText: 'Email'),
-                keyboardType: TextInputType.emailAddress,
-                validator: (value) => value == null || !value.contains('@')
-                    ? 'Enter a valid email'
-                    : null,
-              ),
+                  controller: _emailController,
+                  decoration: const InputDecoration(labelText: 'Email'),
+                  keyboardType: TextInputType.emailAddress,
+                  validator: (v) => v == null || !v.contains('@')
+                      ? 'Enter a valid email'
+                      : null),
               const SizedBox(height: 12),
               TextFormField(
-                controller: _passwordController,
-                decoration: const InputDecoration(labelText: 'Password'),
-                obscureText: true,
-                validator: (value) => value == null || value.length < 6
-                    ? 'Password must be at least 6 characters'
-                    : null,
-              ),
+                  controller: _passwordController,
+                  decoration: const InputDecoration(labelText: 'Password'),
+                  obscureText: true,
+                  validator: (v) => v == null || v.length < 6
+                      ? 'Password must be at least 6 characters'
+                      : null),
               const SizedBox(height: 12),
               TextFormField(
-                controller: _confirmPasswordController,
-                decoration:
-                    const InputDecoration(labelText: 'Confirm Password'),
-                obscureText: true,
-                validator: (value) => value != _passwordController.text
-                    ? 'Passwords do not match'
-                    : null,
-              ),
+                  controller: _confirmPasswordController,
+                  decoration:
+                      const InputDecoration(labelText: 'Confirm Password'),
+                  obscureText: true,
+                  validator: (v) => v != _passwordController.text
+                      ? 'Passwords do not match'
+                      : null),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 value: _selectedCountry,
                 hint: const Text('Select Country'),
                 items: _availableCountries
-                    .map((country) =>
-                        DropdownMenuItem(value: country, child: Text(country)))
+                    .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                     .toList(),
-                onChanged: (value) => setState(() {
-                  _selectedCountry = value;
+                onChanged: (v) => setState(() {
+                  _selectedCountry = v;
                   _selectedState = null;
                 }),
                 decoration: const InputDecoration(labelText: 'Country'),
+                validator: (v) => v == null ? 'Required' : null,
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 value: _selectedState,
+                hint: const Text('Select State/Province'),
                 items: states
-                    .map((state) =>
-                        DropdownMenuItem(value: state, child: Text(state)))
+                    .map((s) => DropdownMenuItem(value: s, child: Text(s)))
                     .toList(),
-                onChanged: (value) => setState(() => _selectedState = value),
+                onChanged: (v) => setState(() => _selectedState = v),
                 decoration: const InputDecoration(labelText: 'State/Province'),
+                validator: (v) => v == null ? 'Required' : null,
               ),
               const SizedBox(height: 12),
               TextFormField(
-                controller: _cityController,
-                decoration: const InputDecoration(labelText: 'City'),
-                validator: (value) =>
-                    value == null || value.isEmpty ? 'Enter your city' : null,
-              ),
+                  controller: _cityController,
+                  decoration: const InputDecoration(labelText: 'City'),
+                  validator: (v) => v == null || v.isEmpty ? 'Required' : null),
               const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,

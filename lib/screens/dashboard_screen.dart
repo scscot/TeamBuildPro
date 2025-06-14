@@ -24,7 +24,6 @@ class DashboardScreen extends StatefulWidget {
     super.key,
     this.initialAuthToken,
     required this.appId,
-    required Map firebaseConfig,
   });
 
   @override
@@ -53,25 +52,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _loadUserAndSettings() async {
     final sessionUser = await SessionManager().getCurrentUser();
-
     if (sessionUser == null || sessionUser.uid.isEmpty) {
-      debugPrint('❌ Session user is null or has empty UID');
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
       return;
     }
-
     _listenForUnreadMessages(sessionUser.uid);
-
     try {
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .doc(sessionUser.uid)
           .get();
-
       final updatedUser = UserModel.fromFirestore(userDoc);
-
       if (mounted) {
         setState(() {
           _user = updatedUser;
@@ -80,9 +71,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
     } catch (e) {
       debugPrint('🔥 Error loading dashboard data: $e');
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -92,12 +81,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         .where('recipientId', isEqualTo: currentUserId)
         .where('read', isEqualTo: false)
         .limit(1);
-
     _unreadMessagesSubscription = query.snapshots().listen((snapshot) {
       if (mounted) {
-        setState(() {
-          _hasUnreadMessages = snapshot.docs.isNotEmpty;
-        });
+        setState(() => _hasUnreadMessages = snapshot.docs.isNotEmpty);
       }
     }, onError: (error) {
       debugPrint("Error listening for unread messages: $error");
@@ -107,7 +93,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _fetchUnreadNotificationCount() async {
     final user = await SessionManager().getCurrentUser();
     if (user == null) return;
-
     FirebaseFirestore.instance
         .collection('users')
         .doc(user.uid)
@@ -135,9 +120,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
           backgroundColor: Colors.deepPurple,
           foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
         icon: Stack(
           clipBehavior: Clip.none,
@@ -151,9 +135,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   width: 10,
                   height: 10,
                   decoration: const BoxDecoration(
-                    color: Colors.red,
-                    shape: BoxShape.circle,
-                  ),
+                      color: Colors.red, shape: BoxShape.circle),
                 ),
               ),
           ],
@@ -167,19 +149,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-
     final user = _user;
-
     return Scaffold(
       appBar: AppHeaderWithMenu(
-        initialAuthToken: widget.initialAuthToken,
-        appId: widget.appId,
-        firebaseConfig: {},
-      ),
+          initialAuthToken: widget.initialAuthToken, appId: widget.appId),
       body: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Column(
@@ -188,106 +163,79 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const Padding(
               padding: EdgeInsets.only(top: 24.0),
               child: Center(
-                child: Text(
-                  'Dashboard',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                ),
-              ),
+                  child: Text('Dashboard',
+                      style: TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.bold))),
             ),
             const SizedBox(height: 32),
             buildButton(
               icon: Icons.group,
               label: 'My Downline',
               onPressed: () async {
-                final String? currentAuthToken =
+                final currentAuthToken =
                     await FirebaseAuth.instance.currentUser?.getIdToken();
                 if (!mounted) return;
                 Navigator.push(
-                  // ignore: use_build_context_synchronously
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => DownlineTeamScreen(
-                      initialAuthToken: currentAuthToken ?? '',
-                      appId: widget.appId,
-                      firebaseConfig: {},
-                    ),
-                  ),
-                );
+                    // ignore: use_build_context_synchronously
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => DownlineTeamScreen(
+                            initialAuthToken: currentAuthToken ?? '',
+                            appId: widget.appId)));
               },
             ),
             buildButton(
               icon: Icons.trending_up_rounded,
               label: 'Grow My Team',
               onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => ShareScreen(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => ShareScreen(
                           initialAuthToken: widget.initialAuthToken,
-                          appId: widget.appId,
-                          firebaseConfig: {},
-                        )),
-              ),
+                          appId: widget.appId))),
             ),
             buildButton(
               icon: Icons.message,
               label: 'Message Center',
               showRedDot: _hasUnreadMessages,
-              onPressed: () {
-                Navigator.push(
+              onPressed: () => Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => MessageCenterScreen(
-                      initialAuthToken: widget.initialAuthToken,
-                      appId: widget.appId,
-                      firebaseConfig: {},
-                    ),
-                  ),
-                );
-              },
+                      builder: (context) => MessageCenterScreen(
+                          initialAuthToken: widget.initialAuthToken,
+                          appId: widget.appId))),
             ),
             buildButton(
               icon: Icons.notifications,
               label: 'Notifications',
               showRedDot: _unreadNotificationCount > 0,
-              onPressed: () {
-                Navigator.push(
+              onPressed: () => Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => NotificationsScreen(
-                      initialAuthToken: widget.initialAuthToken,
-                      appId: widget.appId,
-                      firebaseConfig: {},
-                    ),
-                  ),
-                );
-              },
+                      builder: (context) => NotificationsScreen(
+                          initialAuthToken: widget.initialAuthToken,
+                          appId: widget.appId))),
             ),
             buildButton(
               icon: Icons.person,
               label: 'My Profile',
               onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => ProfileScreen(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => ProfileScreen(
                           initialAuthToken: widget.initialAuthToken,
-                          appId: widget.appId,
-                          firebaseConfig: {},
-                        )),
-              ),
+                          appId: widget.appId))),
             ),
             if (user?.role == 'admin')
               buildButton(
                 icon: Icons.settings,
                 label: 'Opportunity Settings',
                 onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => SettingsScreen(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => SettingsScreen(
                             initialAuthToken: widget.initialAuthToken,
-                            appId: widget.appId,
-                            firebaseConfig: {},
-                          )),
-                ),
+                            appId: widget.appId))),
               ),
             if (user?.role == 'user' &&
                 (user?.directSponsorCount ?? 0) >=
@@ -302,24 +250,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 onPressed: () {
                   if (user?.bizOppRefUrl != null) {
                     Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => MyBizScreen(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => MyBizScreen(
                                 initialAuthToken: widget.initialAuthToken,
-                                appId: widget.appId,
-                                firebaseConfig: {},
-                              )),
-                    );
+                                appId: widget.appId)));
                   } else {
                     Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => JoinOpportunityScreen(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => JoinOpportunityScreen(
                                 initialAuthToken: widget.initialAuthToken,
-                                appId: widget.appId,
-                                firebaseConfig: {},
-                              )),
-                    );
+                                appId: widget.appId)));
                   }
                 },
               ),

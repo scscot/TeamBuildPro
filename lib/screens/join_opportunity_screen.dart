@@ -9,13 +9,13 @@ import '../models/user_model.dart'; // For UserModel
 
 class JoinOpportunityScreen extends StatefulWidget {
   // Add required parameters for consistency with current app navigation
-  final Map<String, dynamic> firebaseConfig;
+  // final Map<String, dynamic> firebaseConfig;
   final String? initialAuthToken;
   final String appId;
 
   const JoinOpportunityScreen({
     super.key,
-    required this.firebaseConfig, // Required
+    // required this.firebaseConfig, // Required
     this.initialAuthToken, // Nullable
     required this.appId, // Required
   });
@@ -195,7 +195,7 @@ class _JoinOpportunityScreenState extends State<JoinOpportunityScreen> {
         MaterialPageRoute(
           builder: (_) => UpdateProfileScreen(
             // Pass required args
-            firebaseConfig: widget.firebaseConfig,
+            // firebaseConfig: widget.firebaseConfig,
             initialAuthToken: widget.initialAuthToken,
             appId: widget.appId,
           ),
@@ -226,7 +226,7 @@ class _JoinOpportunityScreenState extends State<JoinOpportunityScreen> {
       return Scaffold(
         appBar: AppHeaderWithMenu(
           // Pass required args
-          firebaseConfig: widget.firebaseConfig,
+          // firebaseConfig: widget.firebaseConfig,
           initialAuthToken: widget.initialAuthToken,
           appId: widget.appId,
         ),
@@ -237,7 +237,7 @@ class _JoinOpportunityScreenState extends State<JoinOpportunityScreen> {
     return Scaffold(
       appBar: AppHeaderWithMenu(
         // Pass required args
-        firebaseConfig: widget.firebaseConfig,
+        // firebaseConfig: widget.firebaseConfig,
         initialAuthToken: widget.initialAuthToken,
         appId: widget.appId,
       ),

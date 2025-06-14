@@ -7,13 +7,13 @@ import '../widgets/header_widgets.dart'; // AppHeaderWithMenu
 
 class NotificationsScreen extends StatefulWidget {
   // Add required parameters for consistency with current app navigation
-  final Map<String, dynamic> firebaseConfig;
+  // final Map<String, dynamic> firebaseConfig;
   final String? initialAuthToken;
   final String appId;
 
   const NotificationsScreen({
     super.key,
-    required this.firebaseConfig,
+    // required this.firebaseConfig,
     this.initialAuthToken,
     required this.appId,
   });
@@ -76,7 +76,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       return Scaffold(
         appBar: AppHeaderWithMenu(
           // Pass required args
-          firebaseConfig: widget.firebaseConfig,
+          // firebaseConfig: widget.firebaseConfig,
           initialAuthToken: widget.initialAuthToken,
           appId: widget.appId,
         ),
@@ -87,7 +87,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return Scaffold(
       appBar: AppHeaderWithMenu(
         // Pass required args
-        firebaseConfig: widget.firebaseConfig,
+        // firebaseConfig: widget.firebaseConfig,
         initialAuthToken: widget.initialAuthToken,
         appId: widget.appId,
       ),

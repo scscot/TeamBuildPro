@@ -5,13 +5,13 @@ import '../widgets/header_widgets.dart';
 
 class ShareScreen extends StatelessWidget {
   // Add required parameters to ShareScreen constructor
-  final Map<String, dynamic> firebaseConfig;
+  // final Map<String, dynamic> firebaseConfig;
   final String? initialAuthToken;
   final String appId;
 
   const ShareScreen({
     super.key,
-    required this.firebaseConfig,
+    // required this.firebaseConfig,
     this.initialAuthToken,
     required this.appId,
   });
@@ -24,8 +24,9 @@ class ShareScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppHeaderWithMenu( // Pass required args to the header
-        firebaseConfig: firebaseConfig,
+      appBar: AppHeaderWithMenu(
+        // Pass required args to the header
+        // firebaseConfig: firebaseConfig,
         initialAuthToken: initialAuthToken,
         appId: appId,
       ),
@@ -46,7 +47,8 @@ class ShareScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 24),
-                  const Text('Your referral link will appear here.'), // Retaining this text as per your original
+                  const Text(
+                      'Your referral link will appear here.'), // Retaining this text as per your original
                   const SizedBox(height: 24),
                   ElevatedButton.icon(
                     icon: const Icon(Icons.share),

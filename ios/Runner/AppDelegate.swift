@@ -1,6 +1,6 @@
-import UIKit
-import Flutter
 import Firebase
+import Flutter
+import UIKit
 import UserNotifications
 
 @main
@@ -9,25 +9,28 @@ import UserNotifications
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    FirebaseApp.configure()
-    UNUserNotificationCenter.current().delegate = self
-    Messaging.messaging().delegate = self
-    application.registerForRemoteNotifications()
     GeneratedPluginRegistrant.register(with: self)
+
+    UNUserNotificationCenter.current().delegate = self
+    application.registerForRemoteNotifications()
+
+    Messaging.messaging().delegate = self
+
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
-  // Handle foreground notification display
+  // Foreground notification handler
   override func userNotificationCenter(
     _ center: UNUserNotificationCenter,
     willPresent notification: UNNotification,
     withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
   ) {
-    completionHandler([.alert, .sound, .badge])
+    completionHandler([.alert, .badge, .sound])
   }
 
-  // Handle FCM token refresh
+  // FCM token refresh handler
   func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
     print("📲 FCM registration token: \(String(describing: fcmToken))")
+    // Optionally send token to backend here
   }
 }

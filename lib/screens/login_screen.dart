@@ -12,14 +12,11 @@ import 'new_registration_screen.dart';
 import '../widgets/header_widgets.dart';
 
 class LoginScreen extends StatefulWidget {
-  // REMOVED: final Map<String, dynamic> firebaseConfig;
   final String appId;
 
   const LoginScreen({
     super.key,
-    // REMOVED: required this.firebaseConfig,
     required this.appId,
-    required Map<String, dynamic> firebaseConfig,
   });
 
   @override
@@ -39,14 +36,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _tryBiometricLogin() async {
-    if (await SessionManager().isLogoutCooldownActive(5)) {
-      debugPrint('⏳ Skipping biometric login — logout cooldown in effect');
-      return;
-    }
-
+    if (await SessionManager().isLogoutCooldownActive(5)) return;
     final enabled = await SessionManager().getBiometricEnabled();
     if (!enabled) return;
-
     final auth = LocalAuthentication();
     final canAuth =
         await auth.canCheckBiometrics && await auth.isDeviceSupported();
@@ -58,38 +50,26 @@ class _LoginScreenState extends State<LoginScreen> {
         options:
             const AuthenticationOptions(biometricOnly: true, stickyAuth: true),
       );
-
       if (!mounted) return;
-
       if (didAuthenticate) {
         final currentUser = FirebaseAuth.instance.currentUser;
-        if (currentUser != null && currentUser.uid.isNotEmpty) {
-          final DocumentSnapshot<Map<String, dynamic>> userDoc =
-              await FirebaseFirestore.instance
-                  .collection('users')
-                  .doc(currentUser.uid)
-                  .get();
-
+        if (currentUser != null) {
+          final userDoc = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(currentUser.uid)
+              .get();
           if (userDoc.exists) {
             final fullUser = UserModel.fromFirestore(userDoc);
             await SessionManager().setCurrentUser(fullUser);
             if (!mounted) return;
-
-            final String? initialAuthToken = await currentUser.getIdToken();
-
+            final initialAuthToken = await currentUser.getIdToken();
             Navigator.of(context).pushReplacement(
               MaterialPageRoute(
-                builder: (context) => DashboardScreen(
-                  appId: widget.appId,
-                  firebaseConfig: {},
-                  initialAuthToken: initialAuthToken,
-                ),
-              ),
+                  builder: (context) => DashboardScreen(
+                      appId: widget.appId, initialAuthToken: initialAuthToken)),
             );
-            return;
           }
         }
-        debugPrint('❌ No user session found after biometric login');
       }
     } catch (e) {
       debugPrint('❌ Biometric login error: $e');
@@ -98,32 +78,23 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
-
     setState(() => _isLoading = true);
     try {
-      final user = await AuthService().login(
-        _emailController.text.trim(),
-        _passwordController.text.trim(),
-      );
+      final user = await AuthService()
+          .login(_emailController.text.trim(), _passwordController.text.trim());
       await SessionManager().setCurrentUser(user);
       if (!mounted) return;
-
-      final String? currentAuthToken =
+      final currentAuthToken =
           await FirebaseAuth.instance.currentUser?.getIdToken();
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (context) => DashboardScreen(
-            appId: widget.appId,
-            firebaseConfig: {},
-            initialAuthToken: currentAuthToken,
-          ),
-        ),
+            builder: (context) => DashboardScreen(
+                appId: widget.appId, initialAuthToken: currentAuthToken)),
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Login failed: $e')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Login failed: $e')));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -132,11 +103,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppHeaderWithMenu(
-        initialAuthToken: null,
-        appId: widget.appId,
-        firebaseConfig: {},
-      ),
+      appBar: AppHeaderWithMenu(initialAuthToken: null, appId: widget.appId),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Form(
@@ -148,17 +115,16 @@ class _LoginScreenState extends State<LoginScreen> {
                 controller: _emailController,
                 keyboardType: TextInputType.emailAddress,
                 decoration: const InputDecoration(labelText: 'Email'),
-                validator: (value) =>
-                    value == null || value.isEmpty ? 'Enter your email' : null,
+                validator: (v) =>
+                    v == null || v.isEmpty ? 'Enter your email' : null,
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _passwordController,
                 obscureText: true,
                 decoration: const InputDecoration(labelText: 'Password'),
-                validator: (value) => value == null || value.length < 6
-                    ? 'Enter your password'
-                    : null,
+                validator: (v) =>
+                    v == null || v.length < 6 ? 'Enter your password' : null,
               ),
               const SizedBox(height: 24),
               ElevatedButton(
@@ -170,43 +136,30 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 12),
               TextButton(
                 onPressed: () async {
-                  final email = _emailController.text.trim();
-                  if (email.isEmpty) {
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: Text('Please enter your email first.')),
-                    );
+                  if (_emailController.text.trim().isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Please enter your email first.')));
                     return;
                   }
                   try {
-                    await FirebaseAuth.instance
-                        .sendPasswordResetEmail(email: email);
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: Text('Password reset email sent.')),
-                    );
+                    await FirebaseAuth.instance.sendPasswordResetEmail(
+                        email: _emailController.text.trim());
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Password reset email sent.')));
                   } catch (e) {
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Failed to send reset email: $e')),
-                    );
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text('Failed to send reset email: $e')));
                   }
                 },
                 child: const Text('Forgot Password?'),
               ),
               const SizedBox(height: 16),
               TextButton(
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                        builder: (context) => NewRegistrationScreen(
-                              appId: widget.appId,
-                              firebaseConfig: {},
-                            )),
-                  );
-                },
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                      builder: (context) =>
+                          NewRegistrationScreen(appId: widget.appId)),
+                ),
                 child: const Text('Create Account'),
               )
             ],

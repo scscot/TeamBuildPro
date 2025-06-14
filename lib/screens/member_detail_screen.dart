@@ -14,14 +14,14 @@ import '../services/subscription_service.dart';
 class MemberDetailScreen extends StatefulWidget {
   final String userId;
   // Add required parameters for consistency with current app navigation
-  final Map<String, dynamic> firebaseConfig;
+  // final Map<String, dynamic> firebaseConfig;
   final String? initialAuthToken;
   final String appId;
 
   const MemberDetailScreen({
     super.key,
     required this.userId,
-    required this.firebaseConfig, // Required
+    // required this.firebaseConfig, // Required
     this.initialAuthToken, // Nullable
     required this.appId, // Required
   });
@@ -252,7 +252,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       MaterialPageRoute(
         builder: (_) => MessageThreadScreen(
           threadId: threadId,
-          firebaseConfig: widget.firebaseConfig,
+          // firebaseConfig: widget.firebaseConfig,
           initialAuthToken: widget.initialAuthToken,
           appId: widget.appId,
           recipientId: _user!.uid, // Pass recipient's UID
@@ -280,7 +280,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       return Scaffold(
         appBar: AppHeaderWithMenu(
           // Pass required args
-          firebaseConfig: widget.firebaseConfig,
+          // firebaseConfig: widget.firebaseConfig,
           initialAuthToken: widget.initialAuthToken,
           appId: widget.appId,
         ),
@@ -292,7 +292,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       return Scaffold(
         appBar: AppHeaderWithMenu(
           // Pass required args
-          firebaseConfig: widget.firebaseConfig,
+          // firebaseConfig: widget.firebaseConfig,
           initialAuthToken: widget.initialAuthToken,
           appId: widget.appId,
         ),
@@ -304,7 +304,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     return Scaffold(
       appBar: AppHeaderWithMenu(
         // Pass required args
-        firebaseConfig: widget.firebaseConfig,
+        // firebaseConfig: widget.firebaseConfig,
         initialAuthToken: widget.initialAuthToken,
         appId: widget.appId,
       ),

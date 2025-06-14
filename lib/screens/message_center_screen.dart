@@ -11,13 +11,13 @@ import '../services/subscription_service.dart';
 import '../models/user_model.dart';
 
 class MessageCenterScreen extends StatefulWidget {
-  final Map<String, dynamic> firebaseConfig;
+  // final Map<String, dynamic> firebaseConfig;
   final String? initialAuthToken;
   final String appId;
 
   const MessageCenterScreen({
     super.key,
-    required this.firebaseConfig,
+    // required this.firebaseConfig,
     this.initialAuthToken,
     required this.appId,
   });
@@ -122,7 +122,7 @@ class _MessageCenterScreenState extends State<MessageCenterScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppHeaderWithMenu(
-        firebaseConfig: widget.firebaseConfig,
+        // firebaseConfig: widget.firebaseConfig,
         initialAuthToken: widget.initialAuthToken,
         appId: widget.appId,
       ),
@@ -252,7 +252,7 @@ class _MessageCenterScreenState extends State<MessageCenterScreen> {
                                       MaterialPageRoute(
                                         builder: (_) => MessageThreadScreen(
                                           threadId: threadId,
-                                          firebaseConfig: widget.firebaseConfig,
+                                          // firebaseConfig: widget.firebaseConfig,
                                           initialAuthToken:
                                               widget.initialAuthToken,
                                           appId: widget.appId,

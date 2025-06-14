@@ -6,13 +6,13 @@ import 'my_biz_screen.dart';
 import '../models/user_model.dart';
 
 class UpdateProfileScreen extends StatefulWidget {
-  final Map<String, dynamic> firebaseConfig;
+  // final Map<String, dynamic> firebaseConfig;
   final String? initialAuthToken;
   final String appId;
 
   const UpdateProfileScreen({
     super.key,
-    required this.firebaseConfig,
+    // required this.firebaseConfig,
     this.initialAuthToken,
     required this.appId,
   });
@@ -263,7 +263,7 @@ class _UpdateProfileScreenState extends State<UpdateProfileScreen> {
         context,
         MaterialPageRoute(
             builder: (_) => MyBizScreen(
-                  firebaseConfig: widget.firebaseConfig,
+                  // firebaseConfig: widget.firebaseConfig,
                   initialAuthToken: widget.initialAuthToken,
                   appId: widget.appId,
                 )),
@@ -292,7 +292,7 @@ class _UpdateProfileScreenState extends State<UpdateProfileScreen> {
     return Scaffold(
       backgroundColor: Theme.of(context).canvasColor,
       appBar: AppHeaderWithMenu(
-        firebaseConfig: widget.firebaseConfig,
+        // firebaseConfig: widget.firebaseConfig,
         initialAuthToken: widget.initialAuthToken,
         appId: widget.appId,
       ),

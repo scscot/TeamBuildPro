@@ -11,7 +11,7 @@ import '../widgets/header_widgets.dart';
 class MessageThreadScreen extends StatefulWidget {
   final String recipientId;
   final String recipientName;
-  final Map<String, dynamic> firebaseConfig;
+  // final Map<String, dynamic> firebaseConfig;
   final String? initialAuthToken;
   final String appId;
   final String? threadId;
@@ -20,7 +20,7 @@ class MessageThreadScreen extends StatefulWidget {
     super.key,
     required this.recipientId,
     required this.recipientName,
-    required this.firebaseConfig,
+    // required this.firebaseConfig,
     this.initialAuthToken,
     required this.appId,
     this.threadId,
@@ -146,7 +146,7 @@ class _MessageThreadScreenState extends State<MessageThreadScreen> {
     if (!_isThreadReady) {
       return Scaffold(
         appBar: AppHeaderWithMenu(
-          firebaseConfig: widget.firebaseConfig,
+          // firebaseConfig: widget.firebaseConfig,
           initialAuthToken: widget.initialAuthToken,
           appId: widget.appId,
         ),
@@ -161,7 +161,7 @@ class _MessageThreadScreenState extends State<MessageThreadScreen> {
 
     return Scaffold(
       appBar: AppHeaderWithMenu(
-        firebaseConfig: widget.firebaseConfig,
+        // firebaseConfig: widget.firebaseConfig,
         initialAuthToken: widget.initialAuthToken,
         appId: widget.appId,
       ),

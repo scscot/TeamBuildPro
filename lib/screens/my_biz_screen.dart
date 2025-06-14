@@ -6,13 +6,13 @@ import '../widgets/header_widgets.dart';
 
 class MyBizScreen extends StatefulWidget {
   // Add required parameters for consistency with current app navigation
-  final Map<String, dynamic> firebaseConfig;
+  // final Map<String, dynamic> firebaseConfig;
   final String? initialAuthToken;
   final String appId;
 
   const MyBizScreen({
     super.key,
-    required this.firebaseConfig, // Required
+    // required this.firebaseConfig, // Required
     this.initialAuthToken, // Nullable
     required this.appId, // Required
   });
@@ -82,7 +82,7 @@ class _MyBizScreenState extends State<MyBizScreen> {
       backgroundColor: Colors.white,
       appBar: AppHeaderWithMenu(
         // Pass required args to AppHeaderWithMenu
-        firebaseConfig: widget.firebaseConfig,
+        // firebaseConfig: widget.firebaseConfig,
         initialAuthToken: widget.initialAuthToken,
         appId: widget.appId,
       ),
