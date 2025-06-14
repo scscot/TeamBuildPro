@@ -3,6 +3,15 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+
+// --- ADDED: Imports for the new menu destinations ---
+import '../screens/downline_team_screen.dart';
+import '../screens/share_screen.dart';
+import '../screens/message_center_screen.dart';
+import '../screens/notifications_screen.dart';
+import '../screens/join_opportunity_screen.dart';
+// --- END ADDED ---
+
 import '../screens/profile_screen.dart';
 import '../screens/login_screen.dart';
 import '../screens/dashboard_screen.dart';
@@ -60,12 +69,14 @@ class _AppHeaderWithMenuState extends State<AppHeaderWithMenu> {
     }
   }
 
+  // This is the improved back button logic from the new file
   bool _shouldShowBackButton(BuildContext context) {
     return ModalRoute.of(context)?.canPop ?? false;
   }
 
   @override
   Widget build(BuildContext context) {
+    // This is the improved logic to determine when to show the menu
     final isLoginScreen = ModalRoute.of(context)?.settings.name == '/login';
 
     return AppBar(
@@ -89,6 +100,7 @@ class _AppHeaderWithMenuState extends State<AppHeaderWithMenu> {
                       await FirebaseAuth.instance.currentUser?.getIdToken();
                   if (!mounted) return;
 
+                  // --- UPDATED: Added cases for all menu items ---
                   switch (value) {
                     case 'dashboard':
                       Navigator.push(
@@ -106,7 +118,57 @@ class _AppHeaderWithMenuState extends State<AppHeaderWithMenu> {
                                   initialAuthToken: widget.initialAuthToken,
                                   appId: widget.appId)));
                       break;
-                    // Add other cases here...
+                    case 'downline':
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => DownlineTeamScreen(
+                            initialAuthToken: token ?? '',
+                            appId: widget.appId,
+                          ),
+                        ),
+                      );
+                      break;
+                    case 'share':
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => ShareScreen(
+                                  initialAuthToken: widget.initialAuthToken,
+                                  appId: widget.appId,
+                                )),
+                      );
+                      break;
+                    case 'join':
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => JoinOpportunityScreen(
+                                  initialAuthToken: widget.initialAuthToken,
+                                  appId: widget.appId,
+                                )),
+                      );
+                      break;
+                    case 'messages':
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => MessageCenterScreen(
+                                  initialAuthToken: widget.initialAuthToken,
+                                  appId: widget.appId,
+                                )),
+                      );
+                      break;
+                    case 'notifications':
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => NotificationsScreen(
+                                  initialAuthToken: widget.initialAuthToken,
+                                  appId: widget.appId,
+                                )),
+                      );
+                      break;
                     case 'logout':
                       await SessionManager().clearSession();
                       await FirebaseAuth.instance.signOut();
@@ -119,6 +181,7 @@ class _AppHeaderWithMenuState extends State<AppHeaderWithMenu> {
                       break;
                   }
                 },
+                // --- UPDATED: Added all menu items from the old file ---
                 itemBuilder: (BuildContext context) => [
                   if (showJoinOpportunity)
                     const PopupMenuItem<String>(
@@ -126,8 +189,23 @@ class _AppHeaderWithMenuState extends State<AppHeaderWithMenu> {
                   const PopupMenuItem<String>(
                       value: 'dashboard', child: Text('Dashboard')),
                   const PopupMenuItem<String>(
+                    value: 'downline',
+                    child: Text('My Downline'),
+                  ),
+                  const PopupMenuItem<String>(
+                    value: 'share',
+                    child: Text('Grow My Team'),
+                  ),
+                  const PopupMenuItem<String>(
+                    value: 'messages',
+                    child: Text('Messages Center'),
+                  ),
+                  const PopupMenuItem<String>(
+                    value: 'notifications',
+                    child: Text('Notifications'),
+                  ),
+                  const PopupMenuItem<String>(
                       value: 'profile', child: Text('My Profile')),
-                  // ... other menu items
                   const PopupMenuItem<String>(
                       value: 'logout', child: Text('Logout')),
                 ],
