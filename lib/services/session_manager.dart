@@ -18,20 +18,24 @@ class SessionManager {
     final prefs = await SharedPreferences.getInstance();
     final userJson = prefs.getString(_userKey);
     if (userJson != null) {
-      return UserModel.fromMap(jsonDecode(userJson) as Map<String, dynamic>); // Use fromMap
+      return UserModel.fromMap(jsonDecode(userJson) as Map<String, dynamic>);
     }
     return null;
   }
 
   Future<void> setCurrentUser(UserModel user) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_userKey, jsonEncode(user.toMap())); // Use toMap
+    await prefs.setString(_userKey, jsonEncode(user.toMap()));
   }
 
+  // --- THIS IS THE CORRECTED FUNCTION ---
   Future<void> clearSession() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_userKey);
-    await prefs.setInt(_lastLogoutTimestampKey, DateTime.now().millisecondsSinceEpoch);
+    await prefs.remove(_userKey); // Removes the stored user profile
+    await prefs.remove(
+        _biometricEnabledKey); // <-- THE FIX: Also removes the biometric flag
+    await prefs.setInt(
+        _lastLogoutTimestampKey, DateTime.now().millisecondsSinceEpoch);
   }
 
   Future<bool> getBiometricEnabled() async {
@@ -49,7 +53,8 @@ class SessionManager {
     final lastLogoutTimestamp = prefs.getInt(_lastLogoutTimestampKey);
     if (lastLogoutTimestamp == null) return false;
 
-    final lastLogoutDateTime = DateTime.fromMillisecondsSinceEpoch(lastLogoutTimestamp);
+    final lastLogoutDateTime =
+        DateTime.fromMillisecondsSinceEpoch(lastLogoutTimestamp);
     final now = DateTime.now();
     final difference = now.difference(lastLogoutDateTime).inMinutes;
 
