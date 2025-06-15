@@ -322,3 +322,61 @@ exports.sendPushNotification = functions.firestore
     }
     return null;
   });
+
+/**
+ * =================================================================
+ * [NEW] Messaging Cloud Function
+ * =================================================================
+ * @description Updates a message thread's unread status when a new
+ * chat message is created.
+ */
+exports.updateUnreadStatus = functions.firestore
+  .document("messages/{threadId}/chat/{messageId}")
+  .onCreate(async (snap, context) => {
+    const message = snap.data();
+    const threadId = context.params.threadId;
+    const senderId = message.senderId;
+
+    const threadRef = db.collection("messages").doc(threadId);
+
+    try {
+      const threadDoc = await threadRef.get();
+      if (!threadDoc.exists) {
+        console.log(`Thread ${threadId} does not exist.`);
+        return null;
+      }
+
+      const threadData = threadDoc.data();
+      const allowedUsers = threadData.allowedUsers || [];
+      const recipients = allowedUsers.filter((uid) => uid !== senderId);
+
+      if (recipients.length === 0) {
+        console.log("No recipients to notify.");
+        return null;
+      }
+
+      // --- THE FIX IS HERE ---
+      // This payload now includes `lastUpdatedAt` to ensure all future
+      // documents are consistent with what the client query expects.
+      const updatePayload = {
+        usersWithUnread: admin.firestore.FieldValue.arrayUnion(...recipients),
+        lastMessage: {
+          text: message.text || "",
+          timestamp: message.timestamp || admin.firestore.FieldValue.serverTimestamp(),
+          senderId: senderId,
+        },
+        lastUpdatedAt: message.timestamp || admin.firestore.FieldValue.serverTimestamp(), // <-- ADDED THIS LINE
+      };
+
+      await threadRef.update(updatePayload);
+      console.log(`Updated unread status for thread ${threadId}`);
+      return null;
+    } catch (error) {
+      console.error(
+        `Error updating unread status for thread ${threadId}:`,
+        error
+      );
+      return null;
+    }
+  });
+
