@@ -264,7 +264,7 @@ class _UpdateProfileScreenState extends State<UpdateProfileScreen> {
         MaterialPageRoute(
             builder: (_) => MyBizScreen(
                   // firebaseConfig: widget.firebaseConfig,
-                  initialAuthToken: widget.initialAuthToken,
+
                   appId: widget.appId,
                 )),
       );
@@ -293,7 +293,7 @@ class _UpdateProfileScreenState extends State<UpdateProfileScreen> {
       backgroundColor: Theme.of(context).canvasColor,
       appBar: AppHeaderWithMenu(
         // firebaseConfig: widget.firebaseConfig,
-        initialAuthToken: widget.initialAuthToken,
+
         appId: widget.appId,
       ),
       body: SingleChildScrollView(

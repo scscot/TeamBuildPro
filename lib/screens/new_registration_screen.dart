@@ -2,11 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:cloud_functions/cloud_functions.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
-import '../services/session_manager.dart';
 import '../data/states_by_country.dart';
-import 'dashboard_screen.dart';
 
 class NewRegistrationScreen extends StatefulWidget {
   final String? referralCode;
@@ -130,18 +127,9 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
         'city': _cityController.text.trim(),
         'referralCode': _initialReferralCode,
       });
-      final user = await AuthService().login(email, password);
-      await SessionManager().setCurrentUser(user);
-      final currentAuthToken =
-          await FirebaseAuth.instance.currentUser?.getIdToken();
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-              builder: (_) => DashboardScreen(
-                  appId: widget.appId, initialAuthToken: currentAuthToken)),
-        );
-      }
+      // After successful registration, log the user in.
+      // The StreamBuilder in main.dart will handle navigation.
+      await AuthService().login(email, password);
     } on FirebaseFunctionsException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

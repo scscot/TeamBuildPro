@@ -1,17 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
 
 import '../models/user_model.dart';
 import '../services/firestore_service.dart';
-import '../services/session_manager.dart';
 import '../widgets/header_widgets.dart';
 
 class MessageThreadScreen extends StatefulWidget {
   final String recipientId;
   final String recipientName;
-  // final Map<String, dynamic> firebaseConfig;
   final String? initialAuthToken;
   final String appId;
   final String? threadId;
@@ -20,7 +19,6 @@ class MessageThreadScreen extends StatefulWidget {
     super.key,
     required this.recipientId,
     required this.recipientName,
-    // required this.firebaseConfig,
     this.initialAuthToken,
     required this.appId,
     this.threadId,
@@ -33,14 +31,11 @@ class MessageThreadScreen extends StatefulWidget {
 class _MessageThreadScreenState extends State<MessageThreadScreen> {
   final TextEditingController _controller = TextEditingController();
   final FirestoreService _firestoreService = FirestoreService();
-  final SessionManager _sessionManager = SessionManager();
 
   String? _currentUserId;
   UserModel? _recipientUser;
   String? _threadId;
   bool _isThreadReady = false;
-
-  StreamSubscription<QuerySnapshot>? _messagesSubscription;
 
   @override
   void initState() {
@@ -48,35 +43,29 @@ class _MessageThreadScreenState extends State<MessageThreadScreen> {
     _initializeThread();
   }
 
-  // NEW: Method to update read status
   void _markMessagesAsRead(List<QueryDocumentSnapshot> messages) {
     if (_threadId == null) return;
-
-    // Use a write batch to update all unread messages in one server operation
     final batch = FirebaseFirestore.instance.batch();
-
     for (var doc in messages) {
       final data = doc.data() as Map<String, dynamic>;
-      // Only mark messages as read if they were sent by the other person
       if (data['senderId'] != _currentUserId && data['read'] == false) {
         batch.update(doc.reference, {'read': true});
       }
     }
-
     batch.commit().catchError((error) {
       debugPrint("Failed to mark messages as read: $error");
     });
   }
 
   Future<void> _initializeThread() async {
-    final currentUser = await _sessionManager.getCurrentUser();
-    if (!mounted || currentUser == null) {
+    // FIX: Use FirebaseAuth as the source of truth
+    final authUser = FirebaseAuth.instance.currentUser;
+    if (!mounted || authUser == null) {
       debugPrint('Error: Current user not found for message thread.');
       return;
     }
 
-    final uid = currentUser.uid;
-
+    final uid = authUser.uid;
     final calculatedThreadId =
         widget.threadId ?? _generateThreadId(uid, widget.recipientId);
     final threadDocRef = FirebaseFirestore.instance
@@ -110,19 +99,7 @@ class _MessageThreadScreenState extends State<MessageThreadScreen> {
 
   Future<void> _sendMessage() async {
     final text = _controller.text.trim();
-    if (text.isEmpty ||
-        _currentUserId == null ||
-        _threadId == null ||
-        _recipientUser == null) {
-      debugPrint(
-          'Cannot send message: Text empty or IDs/Recipient null. Current User: $_currentUserId, Thread ID: $_threadId, Recipient: ${_recipientUser?.uid}');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Cannot send empty message or user data missing.')),
-      );
-      return;
-    }
+    if (text.isEmpty || _currentUserId == null || _threadId == null) return;
 
     await _firestoreService.sendMessage(
       threadId: _threadId!,
@@ -137,7 +114,6 @@ class _MessageThreadScreenState extends State<MessageThreadScreen> {
   @override
   void dispose() {
     _controller.dispose();
-    _messagesSubscription?.cancel();
     super.dispose();
   }
 
@@ -146,14 +122,13 @@ class _MessageThreadScreenState extends State<MessageThreadScreen> {
     if (!_isThreadReady) {
       return Scaffold(
         appBar: AppHeaderWithMenu(
-          // firebaseConfig: widget.firebaseConfig,
-          initialAuthToken: widget.initialAuthToken,
           appId: widget.appId,
         ),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
+    // ... rest of build method is the same ...
     final displayName = _recipientUser != null
         ? '${_recipientUser!.firstName ?? ''} ${_recipientUser!.lastName ?? ''}'
             .trim()
@@ -161,8 +136,6 @@ class _MessageThreadScreenState extends State<MessageThreadScreen> {
 
     return Scaffold(
       appBar: AppHeaderWithMenu(
-        // firebaseConfig: widget.firebaseConfig,
-        initialAuthToken: widget.initialAuthToken,
         appId: widget.appId,
       ),
       body: Column(
@@ -208,8 +181,6 @@ class _MessageThreadScreenState extends State<MessageThreadScreen> {
                 }
 
                 final docs = snapshot.data!.docs;
-
-                // MODIFIED: Mark incoming messages as read after the frame is built
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   _markMessagesAsRead(docs);
                 });

@@ -7,21 +7,16 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_model.dart';
 import '../services/firestore_service.dart';
-import '../services/session_manager.dart';
 import '../data/states_by_country.dart';
 import '../widgets/header_widgets.dart';
 
 class EditProfileScreen extends StatefulWidget {
   final UserModel user;
-  // final Map<String, dynamic> firebaseConfig;
-  final String? initialAuthToken;
   final String appId;
 
   const EditProfileScreen({
     super.key,
     required this.user,
-    // required this.firebaseConfig,
-    this.initialAuthToken,
     required this.appId,
   });
 
@@ -31,117 +26,63 @@ class EditProfileScreen extends StatefulWidget {
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
   final _formKey = GlobalKey<FormState>();
-  final TextEditingController _firstNameController = TextEditingController();
-  final TextEditingController _lastNameController = TextEditingController();
-  final TextEditingController _cityController = TextEditingController();
+  late TextEditingController _firstNameController;
+  late TextEditingController _lastNameController;
+  late TextEditingController _cityController;
   String? _selectedCountry;
   String? _selectedState;
   bool _isSaving = false;
-
-  // --- NEW: State for image handling ---
   File? _imageFile;
   final ImagePicker _picker = ImagePicker();
-
   List<String> _allowedCountries = [];
-
   List<String> get states => statesByCountry[_selectedCountry] ?? [];
 
   @override
   void initState() {
     super.initState();
-    _loadProfileData();
+    _firstNameController =
+        TextEditingController(text: widget.user.firstName ?? '');
+    _lastNameController =
+        TextEditingController(text: widget.user.lastName ?? '');
+    _cityController = TextEditingController(text: widget.user.city ?? '');
+    _selectedCountry = widget.user.country;
+    _selectedState = widget.user.state;
+    _loadAdminSettings();
   }
 
-  Future<void> _loadProfileData() async {
-    final user = widget.user;
-    _firstNameController.text = user.firstName ?? '';
-    _lastNameController.text = user.lastName ?? '';
-    _cityController.text = user.city ?? '';
-    _selectedCountry = user.country;
-    _selectedState = user.state;
+  Future<void> _loadAdminSettings() async {
+    final authUser = FirebaseAuth.instance.currentUser;
+    if (authUser == null) return;
 
-    final currentUserFirebase = FirebaseAuth.instance.currentUser;
-    if (currentUserFirebase == null) {
-      if (mounted) {
-        setState(() =>
-            _allowedCountries = statesByCountry.keys.toList().cast<String>());
-      }
-      return;
+    // This logic correctly determines which admin settings to fetch.
+    String? adminUidToFetchSettings;
+    if (widget.user.role == 'admin') {
+      adminUidToFetchSettings = widget.user.uid;
+    } else if (widget.user.uplineAdmin != null &&
+        widget.user.uplineAdmin!.isNotEmpty) {
+      adminUidToFetchSettings = widget.user.uplineAdmin;
     }
 
-    try {
-      final currentUserDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(currentUserFirebase.uid)
-          .get();
-      if (!mounted) return;
-
-      if (!currentUserDoc.exists) {
-        if (mounted) {
-          setState(() =>
-              _allowedCountries = statesByCountry.keys.toList().cast<String>());
-        }
-        return;
-      }
-
-      final currentUserModel = UserModel.fromFirestore(currentUserDoc);
-      String? adminUidToFetchSettings;
-
-      if (currentUserModel.role == 'admin') {
-        adminUidToFetchSettings = currentUserModel.uid;
-      } else if (currentUserModel.uplineAdmin != null &&
-          currentUserModel.uplineAdmin!.isNotEmpty) {
-        adminUidToFetchSettings = currentUserModel.uplineAdmin;
-      } else {
-        if (mounted) {
-          setState(() =>
-              _allowedCountries = statesByCountry.keys.toList().cast<String>());
-        }
-        return;
-      }
-
-      DocumentSnapshot<Map<String, dynamic>>? adminSettingsDoc;
-      if (adminUidToFetchSettings != null &&
-          adminUidToFetchSettings.isNotEmpty) {
-        adminSettingsDoc = await FirebaseFirestore.instance
+    if (adminUidToFetchSettings != null) {
+      try {
+        final adminSettingsDoc = await FirebaseFirestore.instance
             .collection('admin_settings')
             .doc(adminUidToFetchSettings)
             .get();
-      }
-
-      if (!mounted) return;
-
-      if (adminSettingsDoc != null && adminSettingsDoc.exists) {
-        final data = adminSettingsDoc.data();
-        if (data != null && data['countries'] is List) {
-          setState(() {
-            _allowedCountries = List<String>.from(data['countries']);
-          });
-        } else {
-          if (mounted) {
-            setState(() => _allowedCountries =
-                statesByCountry.keys.toList().cast<String>());
+        if (mounted && adminSettingsDoc.exists) {
+          final data = adminSettingsDoc.data();
+          if (data != null && data['countries'] is List) {
+            setState(() {
+              _allowedCountries = List<String>.from(data['countries']);
+            });
           }
         }
-      } else {
-        if (mounted) {
-          setState(() =>
-              _allowedCountries = statesByCountry.keys.toList().cast<String>());
-        }
+      } catch (e) {
+        debugPrint("Error fetching admin countries: $e");
       }
-    } catch (e) {
-      debugPrint(
-          'EditProfileScreen: Error fetching admin allowed countries: $e');
-      if (!mounted) return;
-      setState(() =>
-          _allowedCountries = statesByCountry.keys.toList().cast<String>());
     }
-
-    if (!mounted) return;
-    setState(() {});
   }
 
-  // --- NEW: Function to pick an image, adapted from profile_screen.dart ---
   Future<void> _pickImage() async {
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
@@ -149,15 +90,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         child: Wrap(
           children: [
             ListTile(
-              leading: const Icon(Icons.photo_camera),
-              title: const Text('Take a Photo'),
-              onTap: () => Navigator.pop(context, ImageSource.camera),
-            ),
+                leading: const Icon(Icons.photo_camera),
+                title: const Text('Take a Photo'),
+                onTap: () => Navigator.pop(context, ImageSource.camera)),
             ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: const Text('Choose from Gallery'),
-              onTap: () => Navigator.pop(context, ImageSource.gallery),
-            ),
+                leading: const Icon(Icons.photo_library),
+                title: const Text('Choose from Gallery'),
+                onTap: () => Navigator.pop(context, ImageSource.gallery)),
           ],
         ),
       ),
@@ -166,30 +105,24 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (source != null) {
       final pickedFile = await _picker.pickImage(source: source);
       if (pickedFile != null) {
-        setState(() {
-          _imageFile = File(pickedFile.path);
-        });
+        setState(() => _imageFile = File(pickedFile.path));
       }
     }
   }
 
   Future<void> _saveProfile() async {
-    // --- NEW: Require profile picture before form validation ---
     if (_imageFile == null &&
         (widget.user.photoUrl == null || widget.user.photoUrl!.isEmpty)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Please upload a profile picture to continue.')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Please upload a profile picture to continue.')));
       return;
     }
-
     if (!_formKey.currentState!.validate()) return;
+
     setState(() => _isSaving = true);
 
     try {
       String? newPhotoUrl;
-      // --- NEW: Upload image if a new one was selected ---
       if (_imageFile != null) {
         final storageRef = FirebaseStorage.instance
             .ref()
@@ -204,52 +137,43 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         'city': _cityController.text.trim(),
         'country': _selectedCountry,
         'state': _selectedState,
-        // --- NEW: Add photoUrl to the updates map ---
         'photoUrl': newPhotoUrl ?? widget.user.photoUrl,
       };
 
       await FirestoreService().updateUser(widget.user.uid, updates);
-      if (!mounted) return;
 
-      final updatedUser = widget.user.copyWith(
-        firstName: _firstNameController.text.trim(),
-        lastName: _lastNameController.text.trim(),
-        city: _cityController.text.trim(),
-        country: _selectedCountry,
-        state: _selectedState,
-        // --- NEW: Update user model with new photoUrl ---
-        photoUrl: newPhotoUrl ?? widget.user.photoUrl,
-      );
-
-      await SessionManager().setCurrentUser(updatedUser);
+      // We don't need to manually update session. The stream will do it.
       if (!mounted) return;
-      Navigator.of(context).pop(updatedUser);
+      Navigator.of(context).pop(); // Go back to the previous screen
     } catch (e) {
       debugPrint('❌ Failed to update profile: $e');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to update profile: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to update profile: $e')));
+      }
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
   }
 
   @override
+  void dispose() {
+    _firstNameController.dispose();
+    _lastNameController.dispose();
+    _cityController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppHeaderWithMenu(
-        // firebaseConfig: widget.firebaseConfig,
-        initialAuthToken: widget.initialAuthToken,
-        appId: widget.appId,
-      ),
+      appBar: AppHeaderWithMenu(appId: widget.appId),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Form(
           key: _formKey,
           child: Column(
             children: [
-              // --- NEW: Profile picture UI, adapted from profile_screen.dart ---
               const SizedBox(height: 20),
               GestureDetector(
                 onTap: _pickImage,
@@ -269,22 +193,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     ),
                     Container(
                       decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.black54,
-                      ),
+                          shape: BoxShape.circle, color: Colors.black54),
                       padding: const EdgeInsets.all(6),
-                      child: const Icon(
-                        Icons.camera_alt,
-                        color: Colors.white,
-                        size: 20,
-                      ),
+                      child: const Icon(Icons.camera_alt,
+                          color: Colors.white, size: 20),
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 24),
-              // --- End of new UI ---
-
               TextFormField(
                 controller: _firstNameController,
                 decoration: const InputDecoration(labelText: 'First Name'),

@@ -332,7 +332,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Scaffold(
       appBar: AppHeaderWithMenu(
         // firebaseConfig: widget.firebaseConfig,
-        initialAuthToken: widget.initialAuthToken,
+
         appId: widget.appId,
       ),
       backgroundColor: Colors.white,

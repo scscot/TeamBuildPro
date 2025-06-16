@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import '../widgets/header_widgets.dart';
-import '../services/session_manager.dart';
 import '../services/firestore_service.dart';
 import 'message_thread_screen.dart';
 import '../services/subscription_service.dart';
@@ -23,9 +23,7 @@ class MessageCenterScreen extends StatefulWidget {
 }
 
 class _MessageCenterScreenState extends State<MessageCenterScreen> {
-  final SessionManager _sessionManager = SessionManager();
   final FirestoreService _firestoreService = FirestoreService();
-
   String? _currentUserId;
   Stream<List<QueryDocumentSnapshot>>? _threadsStream;
   final Map<String, UserModel> _usersInThreads = {};
@@ -37,15 +35,22 @@ class _MessageCenterScreenState extends State<MessageCenterScreen> {
   }
 
   Future<void> _loadCurrentUserAndCheckSubscription() async {
-    final user = await _sessionManager.getCurrentUser();
-    if (user == null) return;
+    // FIX: Use FirebaseAuth as the source of truth
+    final authUser = FirebaseAuth.instance.currentUser;
+    if (authUser == null) {
+      // Handle user not being logged in
+      return;
+    }
 
-    if (user.role == 'admin') {
+    // Fetch user profile from Firestore to check role
+    final userDoc = await _firestoreService.getUser(authUser.uid);
+    if (userDoc == null) return;
+
+    if (userDoc.role == 'admin') {
       final status =
-          await SubscriptionService.checkAdminSubscriptionStatus(user.uid);
-      final isActive = status['isActive'] == true;
+          await SubscriptionService.checkAdminSubscriptionStatus(userDoc.uid);
       if (!mounted) return;
-      if (!isActive) {
+      if (status['isActive'] != true) {
         showDialog(
           context: context,
           barrierDismissible: false,
@@ -63,17 +68,17 @@ class _MessageCenterScreenState extends State<MessageCenterScreen> {
             ],
           ),
         );
-        return;
+        return; // Stop execution if subscription is not active
       }
     }
 
     if (mounted) {
       setState(() {
-        _currentUserId = user.uid;
-        _usersInThreads[user.uid] = user;
+        _currentUserId = userDoc.uid;
+        _usersInThreads[userDoc.uid] = userDoc;
         _threadsStream = FirebaseFirestore.instance
             .collection('messages')
-            .where('allowedUsers', arrayContains: user.uid)
+            .where('allowedUsers', arrayContains: userDoc.uid)
             .orderBy('lastUpdatedAt', descending: true)
             .snapshots()
             .map((snapshot) => snapshot.docs);
@@ -105,7 +110,6 @@ class _MessageCenterScreenState extends State<MessageCenterScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppHeaderWithMenu(
-        initialAuthToken: widget.initialAuthToken,
         appId: widget.appId,
       ),
       body: Padding(
@@ -161,23 +165,18 @@ class _MessageCenterScreenState extends State<MessageCenterScreen> {
                                 : '...';
                             final photoUrl = otherUser?.photoUrl;
 
-                            // --- THIS IS THE DEFINITIVE FIX ---
-                            // It safely handles both Map and String types for 'lastMessage'.
                             final lastMessageValue = data['lastMessage'];
                             String snippet;
                             String lastMessageSenderId;
 
                             if (lastMessageValue is Map<String, dynamic>) {
-                              // If it's a map (new messages), parse it correctly.
                               snippet = lastMessageValue['text'] ??
                                   'No message text.';
                               lastMessageSenderId =
                                   lastMessageValue['senderId'] ?? '';
                             } else {
-                              // If it's a string (old messages) or null, use it directly.
                               snippet = lastMessageValue?.toString() ??
                                   'No messages yet.';
-                              // Use the old senderId field as a fallback.
                               lastMessageSenderId =
                                   data['lastMessageSenderId'] ?? '';
                             }
@@ -248,7 +247,6 @@ class _MessageCenterScreenState extends State<MessageCenterScreen> {
                                   MaterialPageRoute(
                                     builder: (_) => MessageThreadScreen(
                                       threadId: threadId,
-                                      initialAuthToken: widget.initialAuthToken,
                                       appId: widget.appId,
                                       recipientId: otherUserId,
                                       recipientName: otherUserName,

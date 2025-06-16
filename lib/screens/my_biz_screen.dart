@@ -83,7 +83,7 @@ class _MyBizScreenState extends State<MyBizScreen> {
       appBar: AppHeaderWithMenu(
         // Pass required args to AppHeaderWithMenu
         // firebaseConfig: widget.firebaseConfig,
-        initialAuthToken: widget.initialAuthToken,
+
         appId: widget.appId,
       ),
       body: loading

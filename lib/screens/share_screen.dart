@@ -27,7 +27,6 @@ class ShareScreen extends StatelessWidget {
       appBar: AppHeaderWithMenu(
         // Pass required args to the header
         // firebaseConfig: firebaseConfig,
-        initialAuthToken: initialAuthToken,
         appId: appId,
       ),
       body: Column(

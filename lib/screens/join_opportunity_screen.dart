@@ -196,7 +196,7 @@ class _JoinOpportunityScreenState extends State<JoinOpportunityScreen> {
           builder: (_) => UpdateProfileScreen(
             // Pass required args
             // firebaseConfig: widget.firebaseConfig,
-            initialAuthToken: widget.initialAuthToken,
+
             appId: widget.appId,
           ),
         ),
@@ -227,7 +227,7 @@ class _JoinOpportunityScreenState extends State<JoinOpportunityScreen> {
         appBar: AppHeaderWithMenu(
           // Pass required args
           // firebaseConfig: widget.firebaseConfig,
-          initialAuthToken: widget.initialAuthToken,
+
           appId: widget.appId,
         ),
         body: const Center(child: CircularProgressIndicator()),
@@ -238,7 +238,7 @@ class _JoinOpportunityScreenState extends State<JoinOpportunityScreen> {
       appBar: AppHeaderWithMenu(
         // Pass required args
         // firebaseConfig: widget.firebaseConfig,
-        initialAuthToken: widget.initialAuthToken,
+
         appId: widget.appId,
       ),
       backgroundColor: Colors.white,

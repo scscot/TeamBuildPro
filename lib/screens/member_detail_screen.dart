@@ -1,29 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:flutter/foundation.dart' show kDebugMode; // Import kDebugMode
-import 'dart:developer' as developer; // Import for logging
-
-import 'package:cloud_firestore/cloud_firestore.dart'; // Explicitly add if needed
+import 'package:flutter/foundation.dart' show kDebugMode;
+import 'dart:developer' as developer;
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../widgets/header_widgets.dart';
 import '../services/firestore_service.dart';
 import '../models/user_model.dart';
-import '../services/session_manager.dart';
 import 'message_thread_screen.dart';
 import '../services/subscription_service.dart';
 
 class MemberDetailScreen extends StatefulWidget {
   final String userId;
-  // Add required parameters for consistency with current app navigation
-  // final Map<String, dynamic> firebaseConfig;
   final String? initialAuthToken;
   final String appId;
 
   const MemberDetailScreen({
     super.key,
     required this.userId,
-    // required this.firebaseConfig, // Required
-    this.initialAuthToken, // Nullable
-    required this.appId, // Required
+    this.initialAuthToken,
+    required this.appId,
   });
 
   @override
@@ -31,12 +27,12 @@ class MemberDetailScreen extends StatefulWidget {
 }
 
 class _MemberDetailScreenState extends State<MemberDetailScreen> {
-  UserModel? _user; // The member whose profile is being viewed
-  UserModel? _currentUser; // The currently logged-in user
+  UserModel? _user;
+  UserModel? _currentUser;
   String? _sponsorName;
-  String? _uplineAdminName; // New state variable for upline admin name
-  String? _uplineAdminUid; // To store the UID of the upline admin
-  bool _isLoading = true; // Added loading state
+  String? _uplineAdminName;
+  String? _uplineAdminUid;
+  bool _isLoading = true;
 
   @override
   void initState() {
@@ -44,7 +40,6 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     _loadUserData();
   }
 
-  // A simple log function that only prints in debug mode
   void _log(String message) {
     if (kDebugMode) {
       developer.log(message, name: 'MemberDetailScreen');
@@ -52,116 +47,79 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   }
 
   Future<void> _loadUserData() async {
+    // FIX: Use FirebaseAuth as the source of truth for the current user
+    final authUser = FirebaseAuth.instance.currentUser;
+    if (authUser == null) {
+      _log('❌ Current user is not authenticated.');
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
+
     try {
-      final currentUser = await SessionManager()
-          .getCurrentUser(); // Corrected SessionManager access
-      final member = await FirestoreService()
-          .getUser(widget.userId); // This gets UserModel
+      final currentUserDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(authUser.uid)
+          .get();
+      final member = await FirestoreService().getUser(widget.userId);
 
-      if (!mounted) return; // Guard against setState after async gap
+      if (!mounted) return;
 
-      if (member != null && currentUser != null) {
+      if (member != null && currentUserDoc.exists) {
         setState(() {
           _user = member;
-          _currentUser = currentUser;
-          _isLoading = false; // Set loading to false once data is available
+          _currentUser = UserModel.fromFirestore(currentUserDoc);
+          _isLoading = false;
         });
 
-        // --- Retrieve Sponsor Name ---
-        if (member.referredBy != null && member.referredBy!.isNotEmpty) {
-          _log(
-              '🔎 Looking up sponsor name by referralCode: ${member.referredBy}');
-          try {
-            // FirestoreService().getUserByReferralCode already returns UserModel?
-            final sponsorModel = await FirestoreService()
-                .getUserByReferralCode(member.referredBy!);
-            if (!mounted) return; // Guarded context usage
-
-            if (sponsorModel != null) {
-              final sponsorFirstName = sponsorModel.firstName ?? '';
-              final sponsorLastName = sponsorModel.lastName ?? '';
-              final String resolvedSponsorName =
-                  '$sponsorFirstName $sponsorLastName'.trim();
-              if (resolvedSponsorName.isNotEmpty) {
-                _log('✅ Sponsor name resolved: $resolvedSponsorName');
-                setState(() => _sponsorName = resolvedSponsorName);
-              } else {
-                _log(
-                    '⚠️ Sponsor name is empty despite user existing for referralCode: ${member.referredBy}');
-                setState(() =>
-                    _sponsorName = null); // Clear if resolved name is empty
-              }
-            } else {
-              _log(
-                  '❌ Sponsor user document not found for referralCode: ${member.referredBy}');
-              setState(() => _sponsorName = null); // Clear if sponsor not found
-            }
-          } catch (e) {
-            _log('❌ Failed to load sponsor data: $e');
-          }
-        } else {
-          setState(() => _sponsorName = null); // Clear if no referredBy
-        }
-
-        // --- Retrieve Upline Admin Name ---
-        // Access uplineAdmin directly from the member UserModel for this detail screen
-        if (member.uplineAdmin != null && member.uplineAdmin!.isNotEmpty) {
-          _uplineAdminUid = member.uplineAdmin; // Store upline admin UID
-          _log('🔎 Looking up upline admin name by UID: $_uplineAdminUid');
-          try {
-            final adminUserDoc = await FirebaseFirestore.instance
-                .collection('users')
-                .doc(_uplineAdminUid)
-                .get();
-
-            if (!mounted) return; // Guarded context usage
-
-            if (adminUserDoc.exists) {
-              final adminData = adminUserDoc.data();
-              if (adminData != null) {
-                final adminFirstName = adminData['firstName'] ?? '';
-                final adminLastName = adminData['lastName'] ?? '';
-                final String resolvedUplineAdminName =
-                    '$adminFirstName $adminLastName'.trim();
-                if (resolvedUplineAdminName.isNotEmpty) {
-                  _log(
-                      '✅ Upline admin name resolved: $resolvedUplineAdminName');
-                  setState(() => _uplineAdminName = resolvedUplineAdminName);
-                } else {
-                  _log(
-                      '⚠️ Upline admin name is empty despite user existing for UID: $_uplineAdminUid.');
-                }
-              }
-            } else {
-              _log(
-                  '❌ Upline admin user document not found for UID: $_uplineAdminUid');
-            }
-          } catch (e) {
-            _log('❌ Failed to load upline admin data: $e');
-          }
-        } else {
-          _log('ℹ️ Member has no upline_admin specified.');
-          if (mounted) {
-            setState(() => _uplineAdminName = null); // Clear if no upline admin
-          }
-        }
+        // ... rest of the logic to fetch sponsor/upline names is safe to run now
+        _fetchSponsorAndUplineNames(member);
       } else {
-        _log(
-            '⚠️ User data or current user data is null. Cannot load member details.');
-        if (!mounted) {
-          setState(() =>
-              _isLoading = false); // Ensure loading is off even if data is null
-        }
+        _log('⚠️ Member or current user document not found.');
+        if (mounted) setState(() => _isLoading = false);
       }
     } catch (e) {
-      _log('❌ Failed to load member: $e');
-      if (!mounted) {
-        setState(() => _isLoading = false); // Ensure loading is off on error
+      _log('❌ Failed to load user data: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _fetchSponsorAndUplineNames(UserModel member) async {
+    if (member.referredBy != null && member.referredBy!.isNotEmpty) {
+      try {
+        final sponsorModel =
+            await FirestoreService().getUserByReferralCode(member.referredBy!);
+        if (mounted && sponsorModel != null) {
+          setState(() => _sponsorName =
+              '${sponsorModel.firstName ?? ''} ${sponsorModel.lastName ?? ''}'
+                  .trim());
+        }
+      } catch (e) {
+        _log('❌ Failed to load sponsor data: $e');
+      }
+    }
+
+    if (member.uplineAdmin != null && member.uplineAdmin!.isNotEmpty) {
+      _uplineAdminUid = member.uplineAdmin;
+      try {
+        final adminUserDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(_uplineAdminUid)
+            .get();
+        if (mounted && adminUserDoc.exists) {
+          final adminData = adminUserDoc.data();
+          if (adminData != null) {
+            setState(() => _uplineAdminName =
+                '${adminData['firstName'] ?? ''} ${adminData['lastName'] ?? ''}'
+                    .trim());
+          }
+        }
+      } catch (e) {
+        _log('❌ Failed to load upline admin data: $e');
       }
     }
   }
 
-  // PATCH START: Conditional message access logic based on new requirements
+  // ... The rest of your file (_handleSendMessage, build, etc.) remains the same
   void _handleSendMessage() {
     if (_currentUser == null || _user == null) {
       _log('Cannot send message: Current user or target user is null.');
@@ -230,7 +188,6 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     });
   }
 
-  // Helper method to navigate to the message thread, to avoid code duplication
   void _navigateToMessageThread() {
     if (!mounted) return;
     if (_user == null || _currentUser == null) {
@@ -252,36 +209,22 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       MaterialPageRoute(
         builder: (_) => MessageThreadScreen(
           threadId: threadId,
-          // firebaseConfig: widget.firebaseConfig,
-          initialAuthToken: widget.initialAuthToken,
           appId: widget.appId,
-          recipientId: _user!.uid, // Pass recipient's UID
-          recipientName: '${_user!.firstName ?? ''} ${_user!.lastName ?? ''}'
-              .trim(), // Pass recipient's full name
+          recipientId: _user!.uid,
+          recipientName:
+              '${_user!.firstName ?? ''} ${_user!.lastName ?? ''}'.trim(),
         ),
       ),
     );
   }
-// PATCH END
-
-  @override
-  void dispose() {
-    // Cancel the subscription if it was initialized
-    // Ensure you also cancel _userProfileSubscription if you have one active from _loadUserData
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
-    final bool isCurrentUserUserRole =
-        _currentUser?.role == 'user'; // For 'Team Leader' conditional display
+    final bool isCurrentUserUserRole = _currentUser?.role == 'user';
 
     if (_isLoading) {
       return Scaffold(
         appBar: AppHeaderWithMenu(
-          // Pass required args
-          // firebaseConfig: widget.firebaseConfig,
-          initialAuthToken: widget.initialAuthToken,
           appId: widget.appId,
         ),
         body: const Center(child: CircularProgressIndicator()),
@@ -291,9 +234,6 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     if (_user == null || _currentUser == null) {
       return Scaffold(
         appBar: AppHeaderWithMenu(
-          // Pass required args
-          // firebaseConfig: widget.firebaseConfig,
-          initialAuthToken: widget.initialAuthToken,
           appId: widget.appId,
         ),
         body: const Center(
@@ -303,9 +243,6 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
 
     return Scaffold(
       appBar: AppHeaderWithMenu(
-        // Pass required args
-        // firebaseConfig: widget.firebaseConfig,
-        initialAuthToken: widget.initialAuthToken,
         appId: widget.appId,
       ),
       body: SingleChildScrollView(
@@ -317,12 +254,11 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
             Center(
               child: CircleAvatar(
                 radius: 50,
-                backgroundImage: _user!.photoUrl != null &&
-                        _user!.photoUrl!.isNotEmpty
-                    ? NetworkImage(_user!.photoUrl!)
-                    : const AssetImage(
-                            'assets/images/default_avatar.png') // Ensure this asset exists or provide placeholder
-                        as ImageProvider,
+                backgroundImage:
+                    _user!.photoUrl != null && _user!.photoUrl!.isNotEmpty
+                        ? NetworkImage(_user!.photoUrl!)
+                        : const AssetImage('assets/images/default_avatar.png')
+                            as ImageProvider,
               ),
             ),
             const SizedBox(height: 20),
@@ -334,8 +270,6 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               ),
             ),
             const SizedBox(height: 20),
-            // These info rows are based on your original request for this file
-            // _buildInfoRow('Name', '${_user!.firstName} ${_user!.lastName}'),
             _buildInfoRow('City', _user!.city ?? 'N/A'),
             _buildInfoRow('State/Province', _user!.state ?? 'N/A'),
             _buildInfoRow('Country', _user!.country ?? 'N/A'),
@@ -347,22 +281,16 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
             ),
             if (_sponsorName != null && _sponsorName!.isNotEmpty)
               _buildInfoRow('Sponsor Name', _sponsorName!),
-            // START: Conditional Team Leader display based on your original code snippet
             if (_uplineAdminName != null &&
                 _uplineAdminName!.isNotEmpty &&
                 _uplineAdminUid != null &&
-                _user!.referredBy !=
-                    _user!
-                        .uplineAdmin && // Only if directly referred by someone else
-                isCurrentUserUserRole) // Only display for 'user' role current user
+                _user!.referredBy != _user!.uplineAdmin &&
+                isCurrentUserUserRole)
               _buildInfoRow('Team Leader', _uplineAdminName!),
-            // END: Conditional Team Leader display
-
             const SizedBox(height: 30),
             Center(
               child: ElevatedButton.icon(
-                onPressed:
-                    _handleSendMessage, // This is where the new logic triggers
+                onPressed: _handleSendMessage,
                 icon: const Icon(Icons.message),
                 label: const Text('Send Message'),
                 style: ElevatedButton.styleFrom(

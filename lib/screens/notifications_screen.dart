@@ -1,19 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-// import 'package:firebase_auth/firebase_auth.dart'; // Needed for FirebaseAuth to get current user UID
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-import '../services/session_manager.dart'; // Needed for SessionManager
-import '../widgets/header_widgets.dart'; // AppHeaderWithMenu
+import '../widgets/header_widgets.dart';
 
 class NotificationsScreen extends StatefulWidget {
-  // Add required parameters for consistency with current app navigation
-  // final Map<String, dynamic> firebaseConfig;
   final String? initialAuthToken;
   final String appId;
 
   const NotificationsScreen({
     super.key,
-    // required this.firebaseConfig,
     this.initialAuthToken,
     required this.appId,
   });
@@ -23,31 +19,23 @@ class NotificationsScreen extends StatefulWidget {
 }
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
-  String? _uid;
   Future<List<QueryDocumentSnapshot>>? _notificationsFuture;
 
   @override
   void initState() {
     super.initState();
-    _loadUserId();
+    _loadNotifications();
   }
 
-  Future<void> _loadUserId() async {
-    // Corrected SessionManager access: use SessionManager()
-    final user = await SessionManager().getCurrentUser();
-    if (!mounted) return; // Guard against setState after async gap
-
-    if (user != null) {
+  void _loadNotifications() {
+    final authUser = FirebaseAuth.instance.currentUser;
+    if (authUser != null) {
       setState(() {
-        _uid = user.uid;
-        _notificationsFuture = _fetchNotifications(user.uid);
+        _notificationsFuture = _fetchNotifications(authUser.uid);
       });
     } else {
-      // Handle case where user is not logged in, e.g., show error or redirect
       setState(() {
-        _uid = null; // Ensure _uid is null
-        _notificationsFuture = Future.value([]); // Provide an empty list
-        // Optionally show a message to the user that they need to log in
+        _notificationsFuture = Future.value([]);
       });
     }
   }
@@ -58,37 +46,65 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           .collection('users')
           .doc(uid)
           .collection('notifications')
-          .orderBy('createdAt',
-              descending:
-                  true) // Changed to 'createdAt' as per typical notification field
+          .orderBy('createdAt', descending: true)
           .get();
       return snapshot.docs;
     } catch (e) {
       debugPrint('Error fetching notifications for UID $uid: $e');
-      // Return empty list on error
       return [];
+    }
+  }
+
+  Future<void> _deleteNotification(String docId) async {
+    final authUser = FirebaseAuth.instance.currentUser;
+    if (authUser == null) {
+      return;
+    }
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(authUser.uid)
+          .collection('notifications')
+          .doc(docId)
+          .delete();
+      if (mounted) {
+        setState(() {
+          _notificationsFuture = _fetchNotifications(authUser.uid);
+        });
+      }
+    } catch (e) {
+      debugPrint("Error deleting notification: $e");
+    }
+  }
+
+  Future<void> _markNotificationAsRead(DocumentSnapshot doc) async {
+    try {
+      await doc.reference.update({'read': true});
+      if (!mounted) return;
+      final data = doc.data() as Map<String, dynamic>;
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: Text(data['title'] ?? 'Notification'),
+          content:
+              Text(data['body'] ?? data['message'] ?? 'No message content.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      debugPrint("Error marking notification as read: $e");
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_uid == null || _notificationsFuture == null) {
-      return Scaffold(
-        appBar: AppHeaderWithMenu(
-          // Pass required args
-          // firebaseConfig: widget.firebaseConfig,
-          initialAuthToken: widget.initialAuthToken,
-          appId: widget.appId,
-        ),
-        body: const Center(child: CircularProgressIndicator()),
-      );
-    }
-
     return Scaffold(
       appBar: AppHeaderWithMenu(
-        // Pass required args
-        // firebaseConfig: widget.firebaseConfig,
-        initialAuthToken: widget.initialAuthToken,
         appId: widget.appId,
       ),
       body: Column(
@@ -108,16 +124,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             child: FutureBuilder<List<QueryDocumentSnapshot>>(
               future: _notificationsFuture,
               builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  debugPrint(
-                      'FutureBuilder Error loading notifications: ${snapshot.error}');
-                  return const Center(
-                      child: Text('Error loading notifications'));
-                }
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
-
+                if (snapshot.hasError) {
+                  return const Center(
+                      child: Text('Error loading notifications'));
+                }
                 final docs = snapshot.data ?? [];
                 if (docs.isEmpty) {
                   return const Center(child: Text('No notifications yet.'));
@@ -130,15 +143,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   itemBuilder: (context, index) {
                     final doc = docs[index];
                     final data = doc.data() as Map<String, dynamic>;
-                    // Use 'createdAt' as the timestamp field as per common notification structure
-                    // and your UserModel's createdAt field.
                     final timestamp =
                         (data['createdAt'] as Timestamp?)?.toDate().toLocal();
                     final String formattedTime = timestamp != null
-                        ? DateFormat.yMMMMd()
-                            .add_jm()
-                            .format(timestamp) // Format both date and time
+                        ? DateFormat.yMMMMd().add_jm().format(timestamp)
                         : 'N/A';
+                    final isRead = data['read'] == true;
 
                     return Card(
                       margin: const EdgeInsets.symmetric(
@@ -151,19 +161,17 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         contentPadding: const EdgeInsets.symmetric(
                             horizontal: 16, vertical: 12),
                         leading: Icon(
-                          data['read'] == true
+                          isRead
                               ? Icons.notifications_none
                               : Icons.notifications_active,
-                          color: data['read'] == true
-                              ? Colors.grey
-                              : Colors.deepPurple,
+                          color: isRead ? Colors.grey : Colors.deepPurple,
                           size: 28,
                         ),
                         title: Text(
-                          data['title'] ??
-                              'No Title', // Provide default for missing title
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
+                          data['title'] ?? 'No Title',
+                          style: TextStyle(
+                            fontWeight:
+                                isRead ? FontWeight.normal : FontWeight.bold,
                             fontSize: 15,
                           ),
                         ),
@@ -174,11 +182,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                             Text(
                                 data['body'] ??
                                     data['message'] ??
-                                    'No message content.', // Prioritize 'body' or 'message'
+                                    'No message content.',
                                 style: const TextStyle(fontSize: 13)),
                             const SizedBox(height: 6),
                             Text(
-                              formattedTime, // Display formatted time
+                              formattedTime,
                               style: const TextStyle(
                                   fontSize: 11, color: Colors.grey),
                             ),
@@ -187,70 +195,30 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         trailing: IconButton(
                           icon:
                               const Icon(Icons.delete, color: Colors.redAccent),
-                          onPressed: () async {
-                            // Guarded context usage
-                            if (!mounted) return;
-                            if (_uid == null) {
-                              debugPrint(
-                                  'Cannot delete notification: User UID is null.');
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text(
-                                        'Cannot delete notification: User not identified.')),
-                              );
-                              return;
-                            }
-                            await FirebaseFirestore.instance
-                                .collection('users')
-                                .doc(_uid)
-                                .collection('notifications')
-                                .doc(doc.id)
-                                .delete();
-                            // Re-fetch notifications after deletion to update UI
-                            if (mounted) {
-                              setState(() {
-                                _notificationsFuture =
-                                    _fetchNotifications(_uid!);
-                              });
-                            }
-                          },
+                          onPressed: () => _deleteNotification(doc.id),
                         ),
-                        onTap: () async {
-                          // Guarded context usage
-                          if (!mounted) return;
-                          if (_uid == null) {
-                            debugPrint(
-                                'Cannot mark notification read: User UID is null.');
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                  content: Text(
-                                      'Cannot read notification: User not identified.')),
+                        onTap: () {
+                          // STYLE: Added curly braces for consistency
+                          if (!isRead) {
+                            _markNotificationAsRead(doc);
+                          } else {
+                            showDialog(
+                              context: context,
+                              builder: (_) => AlertDialog(
+                                title: Text(data['title'] ?? 'Notification'),
+                                content: Text(data['body'] ??
+                                    data['message'] ??
+                                    'No message content.'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.of(context).pop(),
+                                    child: const Text('OK'),
+                                  ),
+                                ],
+                              ),
                             );
-                            return;
                           }
-                          await FirebaseFirestore.instance
-                              .collection('users')
-                              .doc(_uid)
-                              .collection('notifications')
-                              .doc(doc.id)
-                              .update({'read': true});
-                          if (!mounted) return;
-                          showDialog(
-                            // ignore: use_build_context_synchronously
-                            context: context,
-                            builder: (_) => AlertDialog(
-                              title: Text(data['title'] ?? 'Notification'),
-                              content: Text(data['body'] ??
-                                  data['message'] ??
-                                  'No message content.'),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.of(context).pop(),
-                                  child: const Text('OK'),
-                                ),
-                              ],
-                            ),
-                          );
                         },
                       ),
                     );

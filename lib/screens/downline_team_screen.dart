@@ -17,13 +17,11 @@ enum JoinWindow {
 }
 
 class DownlineTeamScreen extends StatefulWidget {
-  // final Map<String, dynamic> firebaseConfig;
   final String? initialAuthToken;
   final String appId;
 
   const DownlineTeamScreen({
     super.key,
-    // required this.firebaseConfig,
     this.initialAuthToken,
     required this.appId,
   });
@@ -36,7 +34,6 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
   bool isLoading = true;
   JoinWindow selectedJoinWindow = JoinWindow.none;
   Map<int, List<UserModel>> downlineByLevel = {};
-  final currentUserAuth = FirebaseAuth.instance.currentUser;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   int levelOffset = 0;
@@ -66,7 +63,8 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
   }
 
   Future<void> _fetchAndListenToCurrentUser() async {
-    if (currentUserAuth == null) {
+    final authUser = FirebaseAuth.instance.currentUser;
+    if (authUser == null) {
       debugPrint('No authenticated user found for downline screen.');
       if (mounted) {
         setState(() => isLoading = false);
@@ -76,17 +74,16 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
 
     _currentUserDocSubscription = FirebaseFirestore.instance
         .collection('users')
-        .doc(currentUserAuth!.uid)
+        .doc(authUser.uid)
         .snapshots()
-        .listen((docSnapshot) async {
+        .listen((docSnapshot) {
       if (docSnapshot.exists) {
-        _currentUserModel = UserModel.fromFirestore(docSnapshot);
-        debugPrint(
-            'Current user model loaded: ${_currentUserModel?.firstName}');
+        if (!mounted) return;
+        setState(() {
+          _currentUserModel = UserModel.fromFirestore(docSnapshot);
+        });
         fetchDownline();
       } else {
-        debugPrint(
-            'Current user document does not exist for downline screen: ${currentUserAuth!.uid}');
         if (mounted) {
           setState(() => isLoading = false);
         }
@@ -109,18 +106,16 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
     if (!mounted) return;
     setState(() => isLoading = true);
 
-    if (_currentUserModel == null || _currentUserModel!.uid.isEmpty) {
-      debugPrint('Current user model is not available.');
+    if (_currentUserModel == null) {
       if (mounted) {
         setState(() => isLoading = false);
       }
       return;
     }
 
+    // FIX #1: Check if downlineIds is null before using it.
     final currentUsersDownlineIds = _currentUserModel!.downlineIds;
-
-    if (currentUsersDownlineIds == null || currentUsersDownlineIds.isEmpty) {
-      debugPrint('Current user has no downline IDs.');
+    if (currentUsersDownlineIds!.isEmpty) {
       if (mounted) {
         setState(() {
           _fullDownlineUsers = [];
@@ -135,6 +130,7 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
     try {
       List<UserModel> fetchedDownlineUsers = [];
       const int batchSize = 10;
+      // The null and empty checks above guarantee the list is safe to use here.
       for (int i = 0; i < currentUsersDownlineIds.length; i += batchSize) {
         final batchUids = currentUsersDownlineIds.sublist(
           i,
@@ -152,93 +148,86 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
             .map((doc) => UserModel.fromFirestore(doc))
             .toList());
       }
-      _fullDownlineUsers = fetchedDownlineUsers;
-
-      final uplineAdminId = _currentUserModel!.uplineAdmin;
-      if (uplineAdminId != null && uplineAdminId.isNotEmpty) {
-        final uplineAdminDoc = await FirebaseFirestore.instance
-            .collection('admin_settings')
-            .doc(uplineAdminId)
-            .get();
-        if (uplineAdminDoc.exists) {
-          if (mounted) {
-            setState(() {
-              uplineBizOpp = uplineAdminDoc.data()?['biz_opp'];
-            });
-          }
-        }
-      }
-
-      levelOffset = _currentUserModel!.level ?? 0;
-      final now = DateTime.now();
-
-      downlineCounts.updateAll((_, __) => 0);
-      final Map<int, List<UserModel>> grouped = {};
-
-      for (var user in _fullDownlineUsers) {
-        if (user.level != null && user.level! > levelOffset) {
-          final joined = user.joined;
-          final qualified = user.qualifiedDate;
-
-          // Update counts
-          if (joined != null) {
-            if (joined.isAfter(now.subtract(const Duration(days: 1)))) {
-              downlineCounts[JoinWindow.last24] =
-                  (downlineCounts[JoinWindow.last24] ?? 0) + 1;
-            }
-            if (joined.isAfter(now.subtract(const Duration(days: 7)))) {
-              downlineCounts[JoinWindow.last7] =
-                  (downlineCounts[JoinWindow.last7] ?? 0) + 1;
-            }
-            if (joined.isAfter(now.subtract(const Duration(days: 30)))) {
-              downlineCounts[JoinWindow.last30] =
-                  (downlineCounts[JoinWindow.last30] ?? 0) + 1;
-            }
-          }
-          if (qualified != null) {
-            downlineCounts[JoinWindow.newQualified] =
-                (downlineCounts[JoinWindow.newQualified] ?? 0) + 1;
-          }
-          downlineCounts[JoinWindow.all] =
-              (downlineCounts[JoinWindow.all] ?? 0) + 1;
-
-          final include = selectedJoinWindow == JoinWindow.none ||
-              selectedJoinWindow == JoinWindow.all ||
-              (selectedJoinWindow == JoinWindow.last24 &&
-                  joined != null &&
-                  joined.isAfter(now.subtract(const Duration(days: 1)))) ||
-              (selectedJoinWindow == JoinWindow.last7 &&
-                  joined != null &&
-                  joined.isAfter(now.subtract(const Duration(days: 7)))) ||
-              (selectedJoinWindow == JoinWindow.last30 &&
-                  joined != null &&
-                  joined.isAfter(now.subtract(const Duration(days: 30)))) ||
-              (selectedJoinWindow == JoinWindow.newQualified &&
-                  qualified != null);
-
-          if (include && (_searchQuery.isEmpty || userMatchesSearch(user))) {
-            final displayLevel = user.level! - levelOffset;
-            grouped.putIfAbsent(displayLevel, () => []).add(user);
-          }
-        }
-      }
-
-      grouped.forEach((level, users) {
-        users.sort(
-            (a, b) => b.joined?.compareTo(a.joined ?? DateTime(1970)) ?? 0);
-      });
-
       if (!mounted) return;
-      setState(() {
-        downlineByLevel = Map.fromEntries(
-            grouped.entries.toList()..sort((a, b) => a.key.compareTo(b.key)));
-      });
+
+      _fullDownlineUsers = fetchedDownlineUsers;
+      _processDownlineData();
     } catch (e) {
       debugPrint('Error loading downline: $e');
     } finally {
       if (mounted) {
         setState(() => isLoading = false);
       }
+    }
+  }
+
+  void _processDownlineData() {
+    if (_currentUserModel == null) return;
+
+    // FIX #2: Provide a default value of 0 if level is null.
+    levelOffset = _currentUserModel!.level!;
+    final now = DateTime.now();
+
+    downlineCounts.updateAll((_, __) => 0);
+    final Map<int, List<UserModel>> grouped = {};
+
+    for (var user in _fullDownlineUsers) {
+      if (user.level != null && user.level! > levelOffset) {
+        final joined = user.joined;
+        final qualified = user.qualifiedDate;
+
+        if (joined != null) {
+          if (joined.isAfter(now.subtract(const Duration(days: 1)))) {
+            downlineCounts[JoinWindow.last24] =
+                (downlineCounts[JoinWindow.last24] ?? 0) + 1;
+          }
+          if (joined.isAfter(now.subtract(const Duration(days: 7)))) {
+            downlineCounts[JoinWindow.last7] =
+                (downlineCounts[JoinWindow.last7] ?? 0) + 1;
+          }
+          if (joined.isAfter(now.subtract(const Duration(days: 30)))) {
+            downlineCounts[JoinWindow.last30] =
+                (downlineCounts[JoinWindow.last30] ?? 0) + 1;
+          }
+        }
+        if (qualified != null) {
+          downlineCounts[JoinWindow.newQualified] =
+              (downlineCounts[JoinWindow.newQualified] ?? 0) + 1;
+        }
+        downlineCounts[JoinWindow.all] =
+            (downlineCounts[JoinWindow.all] ?? 0) + 1;
+
+        final include = selectedJoinWindow == JoinWindow.none ||
+            selectedJoinWindow == JoinWindow.all ||
+            (selectedJoinWindow == JoinWindow.last24 &&
+                joined != null &&
+                joined.isAfter(now.subtract(const Duration(days: 1)))) ||
+            (selectedJoinWindow == JoinWindow.last7 &&
+                joined != null &&
+                joined.isAfter(now.subtract(const Duration(days: 7)))) ||
+            (selectedJoinWindow == JoinWindow.last30 &&
+                joined != null &&
+                joined.isAfter(now.subtract(const Duration(days: 30)))) ||
+            (selectedJoinWindow == JoinWindow.newQualified &&
+                qualified != null);
+
+        if (include && (_searchQuery.isEmpty || userMatchesSearch(user))) {
+          final displayLevel = user.level! - levelOffset;
+          grouped.putIfAbsent(displayLevel, () => []).add(user);
+        }
+      }
+    }
+
+    grouped.forEach((level, users) {
+      users
+          .sort((a, b) => b.joined?.compareTo(a.joined ?? DateTime(1970)) ?? 0);
+    });
+
+    if (mounted) {
+      setState(() {
+        downlineByLevel = Map.fromEntries(
+            grouped.entries.toList()..sort((a, b) => a.key.compareTo(b.key)));
+      });
     }
   }
 
@@ -270,7 +259,6 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
     if (!settingsDoc.exists) return [];
 
     final settings = settingsDoc.data();
-    // FIXED: 'const' changed to 'final'.
     final int directMin = AppConstants.projectWideDirectSponsorMin;
     final int totalMin = AppConstants.projectWideTotalTeamMin;
     final allowedCountries = List<String>.from(settings?['countries'] ?? []);
@@ -293,8 +281,6 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppHeaderWithMenu(
-        // firebaseConfig: widget.firebaseConfig,
-        initialAuthToken: widget.initialAuthToken,
         appId: widget.appId,
       ),
       body: isLoading
@@ -486,8 +472,6 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
                                                   builder: (_) =>
                                                       MemberDetailScreen(
                                                     userId: user.uid,
-                                                    // firebaseConfig:
-                                                    //    widget.firebaseConfig,
                                                     initialAuthToken:
                                                         widget.initialAuthToken,
                                                     appId: widget.appId,
