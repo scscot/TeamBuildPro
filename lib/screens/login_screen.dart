@@ -3,6 +3,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
 import 'dart:math';
@@ -28,18 +29,17 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _passwordController = TextEditingController();
   bool _isLoading = false;
 
-  // REMOVED: The _tryBiometricLogin method and its call in initState are no longer needed.
-
   Future<void> _login() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate() || _isLoading) return;
     setState(() => _isLoading = true);
     try {
       await AuthService()
           .login(_emailController.text.trim(), _passwordController.text.trim());
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Login failed: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Login failed: $e')));
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -49,10 +49,45 @@ class _LoginScreenState extends State<LoginScreen> {
       Future<AuthCredential> Function() getCredential) async {
     if (_isLoading) return;
     setState(() => _isLoading = true);
+    UserCredential? userCredential;
+
     try {
       final credential = await getCredential();
-      await FirebaseAuth.instance.signInWithCredential(credential);
+      userCredential =
+          await FirebaseAuth.instance.signInWithCredential(credential);
+      final authUser = userCredential.user;
+
+      if (authUser == null) {
+        throw Exception("Authentication succeeded but user object is null.");
+      }
+
+      // After successful authentication, immediately check if a profile exists in Firestore.
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(authUser.uid)
+          .get();
+
+      if (!userDoc.exists) {
+        // If no profile exists, this is an unauthorized login.
+        // Delete the newly created auth user to allow them to register properly later.
+        await authUser.delete();
+        await FirebaseAuth.instance.signOut();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No TeamBuild Pro profile exists for this account.'),
+            duration: Duration(seconds: 4),
+          ));
+        }
+      }
+      // If a document *does* exist, we do nothing. The StreamProvider will see the
+      // valid user and profile and navigate to the dashboard automatically.
     } catch (e) {
+      // If sign-in fails or is cancelled, or if deletion fails, we end up here.
+      // Ensure any partially created user is signed out.
+      if (userCredential != null) {
+        await FirebaseAuth.instance.signOut();
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Sign-in failed: ${e.toString()}')));
@@ -65,7 +100,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<AuthCredential> _getGoogleCredential() async {
     final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
-    if (googleUser == null) throw Exception("Sign-in cancelled");
+    if (googleUser == null) throw Exception("Sign-in cancelled by user.");
 
     final GoogleSignInAuthentication googleAuth =
         await googleUser.authentication;

@@ -12,10 +12,13 @@ class AuthService {
       if (user == null) {
         return null;
       }
+      // The stream's only job is to check for a corresponding profile.
       final userDoc = await _firestore.collection('users').doc(user.uid).get();
       if (userDoc.exists) {
         return UserModel.fromFirestore(userDoc);
       } else {
+        // If no profile exists for an authenticated user, they are not fully logged in.
+        // The cleanup is now handled by the client in LoginScreen.
         return null;
       }
     });
