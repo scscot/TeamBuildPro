@@ -1,4 +1,4 @@
-const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onCall, HttpsError, onRequest } = require("firebase-functions/v2/https");
 const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
@@ -13,12 +13,44 @@ const auth = getAuth();
 const messaging = getMessaging();
 
 // =============================================================================
+//  HTTP Functions (onRequest)
+// =============================================================================
+
+exports.getUserByReferralCode = onRequest(
+  { cors: true }, // This handles CORS permissions automatically
+  async (req, res) => {
+    const { code } = req.query;
+    if (!code) {
+      return res.status(400).send("Referral code is required");
+    }
+    try {
+      const snapshot = await db
+        .collection("users")
+        .where("referralCode", "==", code)
+        .limit(1)
+        .get();
+      if (snapshot.empty) {
+        return res.status(404).send("User not found");
+      }
+      const user = snapshot.docs[0].data();
+      return res.status(200).json(user);
+    } catch (error) {
+      console.error("Error fetching user by referral code:", error);
+      return res.status(500).send("Internal server error");
+    }
+  }
+);
+
+// =============================================================================
 //  Callable Functions (onCall)
 // =============================================================================
 
 exports.registerUser = onCall(async (request) => {
+  console.log("🚀 registerUser function triggered with data:", request.data);
+
   const data = request.data;
   if (!data.email || !data.password || !data.firstName) {
+    console.error("❌ Missing required user information.");
     throw new HttpsError("invalid-argument", "Missing required user information.");
   }
   const { email, password, firstName, lastName, country, state, city, referralCode: sponsorReferralCode } = data;
@@ -29,201 +61,171 @@ exports.registerUser = onCall(async (request) => {
   let level = 1;
   const uplineRefs = [];
 
-  if (sponsorReferralCode) {
-    const sponsorQuery = await db.collection("users").where("referralCode", "==", sponsorReferralCode).limit(1).get();
-    if (sponsorQuery.empty) {
-      throw new HttpsError("not-found", "The provided referral code is not valid.");
-    }
-    const sponsorDoc = sponsorQuery.docs[0];
-    sponsor = sponsorDoc.data();
-    sponsorId = sponsorDoc.id;
-    level = (sponsor.level || 0) + 1;
-    uplineAdmin = sponsor.role === "admin" ? sponsor.uid : sponsor.uplineAdmin;
-  }
-
-  let userRecord;
   try {
-    userRecord = await auth.createUser({ email, password, displayName: `${firstName} ${lastName}` });
-  } catch (error) {
-    if (error.code === "auth/email-already-exists") {
-      throw new HttpsError("already-exists", "This email address is already in use.");
-    }
-    console.error("Error creating auth user:", error);
-    throw new HttpsError("internal", "Error creating account.");
-  }
-
-  const newUserUid = userRecord.uid;
-  if (!uplineAdmin) {
-    uplineAdmin = newUserUid;
-  }
-  const newReferralCode = uuidv4().substring(0, 6).toUpperCase();
-
-  const newUserDocData = {
-    uid: newUserUid, firstName, lastName, email, country, state, city,
-    referralCode: newReferralCode, referredBy: sponsorReferralCode || null,
-    level, directSponsorCount: 0, totalTeamCount: 0,
-    role: sponsor ? "user" : "admin", uplineAdmin,
-    createdAt: FieldValue.serverTimestamp(),
-    isUpgraded: false, photoUrl: "", downlineIds: [],
-  };
-
-  try {
-    await db.runTransaction(async (transaction) => {
-      const newUserRef = db.collection("users").doc(newUserUid);
-      transaction.set(newUserRef, newUserDocData);
-      if (sponsorId) {
-        let currentSponsorId = sponsorId;
-        while (currentSponsorId) {
-          const sponsorRef = db.collection("users").doc(currentSponsorId);
-          uplineRefs.push(sponsorRef);
-          const parentDoc = await transaction.get(sponsorRef);
-          if (!parentDoc.exists) break;
-          const parentData = parentDoc.data();
-          if (parentData.referredBy) {
-            const nextSponsorQuery = await db.collection("users").where("referralCode", "==", parentData.referredBy).limit(1).get();
-            currentSponsorId = nextSponsorQuery.empty ? null : nextSponsorQuery.docs[0].id;
-          } else {
-            currentSponsorId = null;
-          }
-        }
+    if (sponsorReferralCode) {
+      console.log(`🔍 Searching for sponsor with referral code: ${sponsorReferralCode}`);
+      const sponsorQuery = await db.collection("users").where("referralCode", "==", sponsorReferralCode).limit(1).get();
+      if (sponsorQuery.empty) {
+        console.error(`❌ Sponsor with referral code ${sponsorReferralCode} not found.`);
+        throw new HttpsError("not-found", "The provided referral code is not valid.");
       }
-      if (uplineRefs.length > 0) {
-        transaction.update(uplineRefs[0], { directSponsorCount: FieldValue.increment(1) });
-        for (const uplineRef of uplineRefs) {
-          transaction.update(uplineRef, {
-            totalTeamCount: FieldValue.increment(1),
-            downlineIds: FieldValue.arrayUnion(newUserUid),
-          });
-        }
+      const sponsorDoc = sponsorQuery.docs[0];
+      sponsor = sponsorDoc.data();
+      sponsorId = sponsorDoc.id;
+      console.log(`✅ Found sponsor: ${sponsor.firstName}, ID: ${sponsorId}`);
+
+      uplineAdmin = sponsor.upline_admin;
+      level = (sponsor.level || 0) + 1; // Default level to 0 if not present
+      console.log(`Sponsor level: ${sponsor.level}, New user level: ${level}, Upline Admin: ${uplineAdmin}`);
+
+      if (Array.isArray(sponsor.upline_refs)) {
+        uplineRefs.push(...sponsor.upline_refs);
       }
-    });
-  } catch (error) {
-    await auth.deleteUser(newUserUid);
-    console.error("🔥 User registration transaction failed, rolling back auth user:", error);
-    throw new HttpsError("internal", "Error saving user data.");
-  }
+      uplineRefs.push(sponsorId);
+      console.log("⛓️ New upline chain:", uplineRefs);
+    }
 
-  return { status: "success", uid: newUserUid };
-});
+    console.log(`🔒 Creating Auth user for: ${email}`);
+    const userRecord = await auth.createUser({ email, password, displayName: `${firstName} ${lastName}` });
+    const newUserId = userRecord.uid;
+    console.log(`✅ Auth user created with UID: ${newUserId}`);
 
-exports.checkAdminSubscriptionStatus = onCall(async (request) => {
-  const { uid } = request.data;
-  // ... (rest of the function logic remains the same)
-});
+    if (!sponsor) {
+      uplineAdmin = newUserId;
+      console.log(`🚩 This is an Admin registration. Setting upline_admin to self: ${uplineAdmin}`);
+    }
 
-// HTTP-triggered functions are not included in this boilerplate
-// as they are defined differently in v2. We can add them back if needed.
+    const referralCode = uuidv4().substring(0, 8).toUpperCase();
+    console.log(`🔑 Generated new referral code: ${referralCode}`);
 
-// =============================================================================
-//  Firestore-Triggered Functions
-// =============================================================================
-
-exports.sendPushNotification = onDocumentCreated("users/{userId}/notifications/{notificationId}", async (event) => {
-  const snap = event.data;
-  if (!snap) {
-    console.log("No data associated with the event");
-    return;
-  }
-  const userId = event.params.userId;
-  const notificationData = snap.data();
-
-  const userDoc = await db.collection("users").doc(userId).get();
-  if (!userDoc.exists) {
-    console.error(`❌ User document for ${userId} does not exist.`);
-    return;
-  }
-
-  const fcmToken = userDoc.data()?.fcm_token;
-  if (!fcmToken) {
-    console.log(`❌ Missing FCM token for user ${userId}. Skipping push.`);
-    return;
-  }
-
-  const message = {
-    token: fcmToken,
-    notification: {
-      title: notificationData?.title || "New Notification",
-      body: notificationData?.message || "You have a new message.",
-    },
-    android: { notification: { sound: "default" } },
-    apns: { payload: { aps: { sound: "default" } } },
-  };
-
-  try {
-    const response = await messaging.send(message);
-    console.log(`✅ FCM push sent to user ${userId}:`, response);
-  } catch (error) {
-    console.error(`❌ Failed to send FCM push to user ${userId}:`, error);
-  }
-});
-
-exports.onNewChatMessage = onDocumentCreated("messages/{threadId}/chat/{messageId}", async (event) => {
-  const snap = event.data;
-  if (!snap) return;
-
-  const message = snap.data();
-  const threadId = event.params.threadId;
-  const senderId = message.senderId;
-
-  const threadRef = db.collection("messages").doc(threadId);
-
-  try {
-    const threadDoc = await threadRef.get();
-    if (!threadDoc.exists) return;
-
-    const threadData = threadDoc.data();
-    const recipients = (threadData.allowedUsers || []).filter((uid) => uid !== senderId);
-
-    if (recipients.length === 0) return;
-
-    await threadRef.update({
-      usersWithUnread: FieldValue.arrayUnion(...recipients),
-      lastMessage: message.text || "",
-      lastMessageSenderId: senderId,
-      lastUpdatedAt: message.timestamp || FieldValue.serverTimestamp(),
-    });
-
-    const senderDoc = await db.collection("users").doc(senderId).get();
-    if (!senderDoc.exists) return;
-
-    const senderName = `${senderDoc.data().firstName} ${senderDoc.data().lastName}`;
-
-    const notificationContent = {
-      title: `💬 You have a new message!`,
-      message: `From: ${senderName}`,
+    const newUserDoc = {
+      firstName,
+      lastName,
+      email,
+      country,
+      state,
+      city,
+      referralCode,
+      referredBy: sponsorReferralCode || null,
+      sponsor_id: sponsorId,
+      upline_admin: uplineAdmin,
+      level,
+      upline_refs: uplineRefs,
       createdAt: FieldValue.serverTimestamp(),
-      read: false,
     };
 
-    await db.collection("users").doc(recipients[0]).collection("notifications").add(notificationContent);
+    console.log(`✍️ Creating Firestore document for user: ${newUserId}`);
+    console.log("Firestore document data:", JSON.stringify(newUserDoc, null, 2));
+    await db.collection("users").doc(newUserId).set(newUserDoc);
+    console.log("✅ Firestore document created successfully.");
+
+    return { success: true, userId: newUserId };
+
   } catch (error) {
-    console.error(`❌ Error in onNewChatMessage for thread ${threadId}:`, error);
+    console.error("🔥 CRITICAL ERROR in registerUser function:", error);
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError("internal", "An unexpected internal error occurred. Please check the function logs.");
+  }
+});
+
+
+exports.checkAdminSubscriptionStatus = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "You must be logged in to check subscription status.");
+  }
+  const adminId = request.auth.uid;
+  try {
+    const subscriptionDoc = await db.collection("subscriptions").doc(adminId).get();
+    if (subscriptionDoc.exists && subscriptionDoc.data().status === "active") {
+      return { isActive: true };
+    }
+    return { isActive: false };
+  } catch (error) {
+    console.error("Error checking subscription status:", error);
+    throw new HttpsError("internal", "Could not check subscription status.");
+  }
+});
+
+exports.sendPushNotification = onCall(async (request) => {
+  const { recipientId, title, body } = request.data;
+  if (!recipientId || !title || !body) {
+    throw new HttpsError("invalid-argument", "Missing required notification data.");
+  }
+  try {
+    const userDoc = await db.collection("users").doc(recipientId).get();
+    const fcmToken = userDoc.data()?.fcmToken;
+    if (fcmToken) {
+      const message = {
+        notification: { title, body },
+        token: fcmToken,
+      };
+      await messaging.send(message);
+      return { success: true };
+    }
+    return { success: false, reason: "FCM token not found for user." };
+  } catch (error) {
+    console.error("Error sending push notification:", error);
+    throw new HttpsError("internal", "Failed to send notification.");
+  }
+});
+
+// =============================================================================
+//  Firestore Trigger Functions (onDocument...)
+// =============================================================================
+
+exports.onNewChatMessage = onDocumentCreated("chats/{chatId}/messages/{messageId}", async (event) => {
+  const messageData = event.data.data();
+  const chatId = event.params.chatId;
+
+  try {
+    const chatDoc = await db.collection("chats").doc(chatId).get();
+    const chatMembers = chatDoc.data().members;
+
+    const senderId = messageData.senderId;
+    const senderName = messageData.senderName;
+    const messageText = messageData.text;
+
+    const recipientIds = chatMembers.filter((id) => id !== senderId);
+
+    for (const recipientId of recipientIds) {
+      const userDoc = await db.collection("users").doc(recipientId).get();
+      const fcmToken = userDoc.data()?.fcmToken;
+
+      if (fcmToken) {
+        const message = {
+          notification: {
+            title: `New message from ${senderName}`,
+            body: messageText,
+          },
+          token: fcmToken,
+          data: { chatId },
+        };
+        await messaging.send(message);
+      }
+    }
+  } catch (error) {
+    console.error(`❌ Error in onNewChatMessage for chat ${chatId}:`, error);
   }
 });
 
 exports.notifyOnQualification = onDocumentUpdated("users/{userId}", async (event) => {
-  const beforeData = event.data?.before.data();
-  const afterData = event.data?.after.data();
-  if (!beforeData || !afterData) return;
-
+  const beforeData = event.data.before.data();
+  const afterData = event.data.after.data();
   const userId = event.params.userId;
-  const DIRECT_SPONSOR_MIN = 5;
-  const TOTAL_TEAM_MIN = 20;
 
-  const wasQualified = (beforeData.directSponsorCount >= DIRECT_SPONSOR_MIN) && (beforeData.totalTeamCount >= TOTAL_TEAM_MIN);
-  const isNowQualified = (afterData.directSponsorCount >= DIRECT_SPONSOR_MIN) && (afterData.totalTeamCount >= TOTAL_TEAM_MIN);
+  const wasQualified = beforeData.isQualified || false;
+  const isQualified = afterData.isQualified || false;
 
-  if (!wasQualified && isNowQualified) {
+  if (!wasQualified && isQualified) {
     try {
-      let bizName = "the business opportunity";
-      if (afterData.uplineAdmin) {
-        const adminSettingsDoc = await db.collection("admin_settings").doc(afterData.uplineAdmin).get();
-        if (adminSettingsDoc.exists && adminSettingsDoc.data().biz_opp) {
-          bizName = adminSettingsDoc.data().biz_opp;
-        }
-      }
+      const adminId = afterData.upline_admin;
+      const adminSettingsDoc = await db.collection("admin_settings").doc(adminId).get();
+      const bizName = adminSettingsDoc.data()?.bizName || "the new opportunity";
+
       const notificationContent = {
-        title: `🏆 Congratulations, ${afterData.firstName}!`,
+        title: `Congratulations, ${afterData.firstName}!`,
         message: `You are now qualified to join ${bizName}.`,
         createdAt: FieldValue.serverTimestamp(), read: false,
       };
@@ -257,6 +259,6 @@ exports.notifyOnNewSponsorship = onDocumentCreated("users/{userId}", async (even
     };
     await db.collection("users").doc(sponsorId).collection("notifications").add(notificationContent);
   } catch (error) {
-    console.error(`❌ Error creating sponsorship notification:`, error);
+    console.error(`❌ Error creating sponsorship notification for user ${snap.id}:`, error);
   }
 });
