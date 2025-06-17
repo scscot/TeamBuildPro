@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import '../services/auth_service.dart';
 import '../data/states_by_country.dart';
+import '../widgets/header_widgets.dart';
 
 class NewRegistrationScreen extends StatefulWidget {
   final String? referralCode;
@@ -43,56 +45,68 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
   @override
   void initState() {
     super.initState();
-    _initialReferralCode = widget.referralCode;
-    _initReferral();
+    _initScreenData();
   }
 
-  Future<void> _initReferral() async {
+  Future<void> _initScreenData() async {
+    setState(() => _isLoading = true);
+
+    _initialReferralCode = widget.referralCode;
+
     if (isDevMode && _initialReferralCode == null) {
-      _initialReferralCode = 'KJ8uFnlhKhWgBa4NVcwT';
+      _initialReferralCode = 'DNK82TCW';
     }
+
     final code = _initialReferralCode;
+
     if (code == null || code.isEmpty) {
       setState(() {
         _isFirstUser = true;
         _availableCountries = statesByCountry.keys.toList();
+        _isLoading = false;
       });
       return;
     }
+
     try {
       final uri = Uri.parse(
           'https://us-central1-teambuilder-plus-fe74d.cloudfunctions.net/getUserByReferralCode?code=$code');
       final response = await http.get(uri);
-      if (!mounted) return;
-      if (response.statusCode == 200) {
+
+      if (mounted && response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final sponsorName =
             '${data['firstName'] ?? ''} ${data['lastName'] ?? ''}'.trim();
-        setState(() => _sponsorName = sponsorName);
         final uplineAdminUid = data['upline_admin'];
+
         if (uplineAdminUid != null) {
-          final countriesResponse = await http.get(Uri.parse(
-              'https://us-central1-teambuilder-plus-fe74d.cloudfunctions.net/getCountriesByAdminUid?uid=$uplineAdminUid'));
-          if (!mounted) return;
-          if (countriesResponse.statusCode == 200) {
-            final countryData = jsonDecode(countriesResponse.body);
-            if (countryData['countries'] is List) {
-              setState(() => _availableCountries =
-                  List<String>.from(countryData['countries']));
-            }
+          final docSnapshot = await FirebaseFirestore.instance
+              .collection('admin_settings')
+              .doc(uplineAdminUid)
+              .get();
+
+          if (mounted &&
+              docSnapshot.exists &&
+              docSnapshot.data()?['countries'] is List) {
+            setState(() {
+              _sponsorName = sponsorName;
+              _availableCountries =
+                  List<String>.from(docSnapshot.data()!['countries']);
+              _isFirstUser = false;
+              _isLoading = false;
+            });
+            return;
           }
         }
-      } else {
-        setState(() {
-          _isFirstUser = true;
-          _availableCountries = statesByCountry.keys.toList();
-        });
       }
+      throw Exception('Could not resolve referral and country data.');
     } catch (e) {
+      debugPrint("Error in non-admin flow, falling back to admin defaults: $e");
       if (mounted) {
         setState(() {
           _isFirstUser = true;
           _availableCountries = statesByCountry.keys.toList();
+          _isLoading = false;
         });
       }
     }
@@ -127,28 +141,34 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
         'city': _cityController.text.trim(),
         'referralCode': _initialReferralCode,
       });
-      // After successful registration, log the user in.
-      // The StreamBuilder in main.dart will handle navigation.
       await AuthService().login(email, password);
+
+      // MODIFIED: On success, pop all screens until we get back to the root,
+      // which will be the new home screen provided by the AuthWrapper.
+      if (mounted) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
     } on FirebaseFunctionsException catch (e) {
       if (mounted) {
+        setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(e.message ?? 'An unknown error occurred.')));
       }
     } catch (e) {
       if (mounted) {
+        setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('An unexpected error occurred: $e')));
       }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
     }
+    // REMOVED: Finally block is no longer needed as state is handled
+    // in the success (pop) or failure (catch) cases.
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Create Account')),
+      appBar: AppHeaderWithMenu(appId: widget.appId),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Form(
