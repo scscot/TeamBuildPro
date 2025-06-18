@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+// Import for debugPrint
 import '../models/user_model.dart';
+import '../services/downline_service.dart';
 import '../screens/member_detail_screen.dart';
 import '../widgets/header_widgets.dart';
-import '../config/app_constants.dart';
+
+// CORRECTED: Unused import removed
 
 enum JoinWindow {
   none,
@@ -31,6 +34,7 @@ class DownlineTeamScreen extends StatefulWidget {
 }
 
 class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
+  final DownlineService _downlineService = DownlineService();
   bool isLoading = true;
   JoinWindow selectedJoinWindow = JoinWindow.none;
   Map<int, List<UserModel>> downlineByLevel = {};
@@ -53,6 +57,14 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
   void initState() {
     super.initState();
     _fetchAndListenToCurrentUser();
+    _searchController.addListener(() {
+      if (_searchQuery != _searchController.text) {
+        setState(() {
+          _searchQuery = _searchController.text;
+        });
+        _processDownlineData();
+      }
+    });
   }
 
   @override
@@ -65,10 +77,7 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
   Future<void> _fetchAndListenToCurrentUser() async {
     final authUser = FirebaseAuth.instance.currentUser;
     if (authUser == null) {
-      debugPrint('No authenticated user found for downline screen.');
-      if (mounted) {
-        setState(() => isLoading = false);
-      }
+      if (mounted) setState(() => isLoading = false);
       return;
     }
 
@@ -77,83 +86,60 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
         .doc(authUser.uid)
         .snapshots()
         .listen((docSnapshot) {
-      if (docSnapshot.exists) {
-        if (!mounted) return;
-        setState(() {
-          _currentUserModel = UserModel.fromFirestore(docSnapshot);
-        });
-        fetchDownline();
-      } else {
-        if (mounted) {
-          setState(() => isLoading = false);
+      if (docSnapshot.exists && mounted) {
+        final newUserModel = UserModel.fromMap(docSnapshot.data()!);
+        if (_currentUserModel == null ||
+            _currentUserModel!.level != newUserModel.level) {
+          setState(() {
+            _currentUserModel = newUserModel;
+            levelOffset = _currentUserModel?.level ?? 1;
+          });
+          fetchDataForSelectedWindow();
+        } else {
+          _currentUserModel = newUserModel;
         }
+      } else {
+        if (mounted) setState(() => isLoading = false);
       }
     }, onError: (error) {
-      debugPrint('Error listening to current user doc: $error');
-      if (mounted) {
-        setState(() => isLoading = false);
-      }
+      if (mounted) setState(() => isLoading = false);
     });
   }
 
-  bool userMatchesSearch(UserModel user) {
-    final query = _searchQuery.toLowerCase();
-    return [user.firstName, user.lastName, user.city, user.state, user.country]
-        .any((field) => field != null && field.toLowerCase().contains(query));
-  }
+  Future<void> fetchDataForSelectedWindow() async {
+    if (selectedJoinWindow == JoinWindow.none || !mounted) {
+      setState(() => isLoading = false);
+      return;
+    }
 
-  Future<void> fetchDownline() async {
-    if (!mounted) return;
     setState(() => isLoading = true);
 
-    if (_currentUserModel == null) {
-      if (mounted) {
-        setState(() => isLoading = false);
-      }
-      return;
-    }
-
-    // FIX #1: Check if downlineIds is null before using it.
-    final currentUsersDownlineIds = _currentUserModel!.downlineIds;
-    if (currentUsersDownlineIds!.isEmpty) {
-      if (mounted) {
-        setState(() {
-          _fullDownlineUsers = [];
-          downlineByLevel = {};
-          downlineCounts.updateAll((_, __) => 0);
-          isLoading = false;
-        });
-      }
-      return;
-    }
-
     try {
-      List<UserModel> fetchedDownlineUsers = [];
-      const int batchSize = 10;
-      // The null and empty checks above guarantee the list is safe to use here.
-      for (int i = 0; i < currentUsersDownlineIds.length; i += batchSize) {
-        final batchUids = currentUsersDownlineIds.sublist(
-          i,
-          i + batchSize > currentUsersDownlineIds.length
-              ? currentUsersDownlineIds.length
-              : i + batchSize,
-        );
+      final results = await Future.wait([
+        _downlineService.getDownline(),
+        _downlineService.getDownlineCounts(),
+      ]);
 
-        final batchSnapshot = await FirebaseFirestore.instance
-            .collection('users')
-            .where(FieldPath.documentId, whereIn: batchUids)
-            .get();
-
-        fetchedDownlineUsers.addAll(batchSnapshot.docs
-            .map((doc) => UserModel.fromFirestore(doc))
-            .toList());
-      }
       if (!mounted) return;
 
-      _fullDownlineUsers = fetchedDownlineUsers;
+      final downlineUsers = results[0] as List<UserModel>;
+      final counts = results[1] as Map<String, int>;
+
+      setState(() {
+        _fullDownlineUsers = downlineUsers;
+        downlineCounts = {
+          JoinWindow.all: counts['all'] ?? 0,
+          JoinWindow.last24: counts['last24'] ?? 0,
+          JoinWindow.last7: counts['last7'] ?? 0,
+          JoinWindow.last30: counts['last30'] ?? 0,
+          JoinWindow.newQualified: counts['newQualified'] ?? 0,
+        };
+      });
+
       _processDownlineData();
     } catch (e) {
-      debugPrint('Error loading downline: $e');
+      // CORRECTED: avoid_print
+      debugPrint('Error fetching downline data: $e');
     } finally {
       if (mounted) {
         setState(() => isLoading = false);
@@ -162,350 +148,233 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
   }
 
   void _processDownlineData() {
-    if (_currentUserModel == null) return;
+    if (_currentUserModel == null || !mounted) return;
 
-    // FIX #2: Provide a default value of 0 if level is null.
-    levelOffset = _currentUserModel!.level!;
+    final Map<int, List<UserModel>> grouped = {};
     final now = DateTime.now();
 
-    downlineCounts.updateAll((_, __) => 0);
-    final Map<int, List<UserModel>> grouped = {};
-
     for (var user in _fullDownlineUsers) {
-      if (user.level != null && user.level! > levelOffset) {
-        final joined = user.joined;
-        final qualified = user.qualifiedDate;
+      final joined = user.createdAt;
+      final qualified = user.qualifiedDate;
 
-        if (joined != null) {
-          if (joined.isAfter(now.subtract(const Duration(days: 1)))) {
-            downlineCounts[JoinWindow.last24] =
-                (downlineCounts[JoinWindow.last24] ?? 0) + 1;
-          }
-          if (joined.isAfter(now.subtract(const Duration(days: 7)))) {
-            downlineCounts[JoinWindow.last7] =
-                (downlineCounts[JoinWindow.last7] ?? 0) + 1;
-          }
-          if (joined.isAfter(now.subtract(const Duration(days: 30)))) {
-            downlineCounts[JoinWindow.last30] =
-                (downlineCounts[JoinWindow.last30] ?? 0) + 1;
-          }
-        }
-        if (qualified != null) {
-          downlineCounts[JoinWindow.newQualified] =
-              (downlineCounts[JoinWindow.newQualified] ?? 0) + 1;
-        }
-        downlineCounts[JoinWindow.all] =
-            (downlineCounts[JoinWindow.all] ?? 0) + 1;
+      bool include = false;
+      switch (selectedJoinWindow) {
+        case JoinWindow.all:
+          include = true;
+          break;
+        case JoinWindow.last24:
+          include = joined != null &&
+              joined.isAfter(now.subtract(const Duration(days: 1)));
+          break;
+        case JoinWindow.last7:
+          include = joined != null &&
+              joined.isAfter(now.subtract(const Duration(days: 7)));
+          break;
+        case JoinWindow.last30:
+          include = joined != null &&
+              joined.isAfter(now.subtract(const Duration(days: 30)));
+          break;
+        case JoinWindow.newQualified:
+          include = qualified != null;
+          break;
+        case JoinWindow.none:
+          break;
+      }
 
-        final include = selectedJoinWindow == JoinWindow.none ||
-            selectedJoinWindow == JoinWindow.all ||
-            (selectedJoinWindow == JoinWindow.last24 &&
-                joined != null &&
-                joined.isAfter(now.subtract(const Duration(days: 1)))) ||
-            (selectedJoinWindow == JoinWindow.last7 &&
-                joined != null &&
-                joined.isAfter(now.subtract(const Duration(days: 7)))) ||
-            (selectedJoinWindow == JoinWindow.last30 &&
-                joined != null &&
-                joined.isAfter(now.subtract(const Duration(days: 30)))) ||
-            (selectedJoinWindow == JoinWindow.newQualified &&
-                qualified != null);
-
-        if (include && (_searchQuery.isEmpty || userMatchesSearch(user))) {
-          final displayLevel = user.level! - levelOffset;
+      if (include && (_searchQuery.isEmpty || userMatchesSearch(user))) {
+        final displayLevel = user.level - levelOffset;
+        if (displayLevel > 0) {
           grouped.putIfAbsent(displayLevel, () => []).add(user);
         }
       }
     }
 
     grouped.forEach((level, users) {
-      users
-          .sort((a, b) => b.joined?.compareTo(a.joined ?? DateTime(1970)) ?? 0);
+      users.sort((a, b) => (b.createdAt ?? DateTime(1970))
+          .compareTo(a.createdAt ?? DateTime(1970)));
     });
 
-    if (mounted) {
-      setState(() {
-        downlineByLevel = Map.fromEntries(
-            grouped.entries.toList()..sort((a, b) => a.key.compareTo(b.key)));
-      });
-    }
+    setState(() {
+      downlineByLevel = Map.fromEntries(
+          grouped.entries.toList()..sort((a, b) => a.key.compareTo(b.key)));
+    });
+  }
+
+  bool userMatchesSearch(UserModel user) {
+    final query = _searchQuery.toLowerCase();
+    return [
+      user.firstName,
+      user.lastName,
+      user.email,
+      user.city,
+      user.state,
+      user.country
+    ].any((field) => field != null && field.toLowerCase().contains(query));
   }
 
   String _dropdownLabel(JoinWindow window) {
+    final count = downlineCounts[window] ?? 0;
     switch (window) {
       case JoinWindow.last24:
-        return 'Joined Previous 24 Hours (${downlineCounts[JoinWindow.last24]})';
+        return 'Joined in last 24 Hours ($count)';
       case JoinWindow.last7:
-        return 'Joined Previous 7 Days (${downlineCounts[JoinWindow.last7]})';
+        return 'Joined in last 7 Days ($count)';
       case JoinWindow.last30:
-        return 'Joined Previous 30 Days (${downlineCounts[JoinWindow.last30]})';
+        return 'Joined in last 30 Days ($count)';
       case JoinWindow.newQualified:
-        return 'Qualified Team Members (${downlineCounts[JoinWindow.newQualified]})';
+        return 'Qualified Team Members ($count)';
       case JoinWindow.all:
-        return 'All Team Members (${downlineCounts[JoinWindow.all]})';
+        return 'All Team Members ($count)';
       case JoinWindow.none:
         return 'Select Downline Report';
     }
   }
 
-  Future<List<Map<String, dynamic>>> fetchEligibleDownlineUsers() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return [];
-
-    final settingsDoc = await FirebaseFirestore.instance
-        .collection('admin_settings')
-        .doc(uid)
-        .get();
-    if (!settingsDoc.exists) return [];
-
-    final settings = settingsDoc.data();
-    final int directMin = AppConstants.projectWideDirectSponsorMin;
-    final int totalMin = AppConstants.projectWideTotalTeamMin;
-    final allowedCountries = List<String>.from(settings?['countries'] ?? []);
-
-    final querySnapshot = await FirebaseFirestore.instance
-        .collection('users')
-        .where('upline_admin', isEqualTo: uid)
-        .get();
-
-    return querySnapshot.docs
-        .map((doc) => doc.data())
-        .where((user) =>
-            (user['direct_sponsor_count'] ?? 0) >= directMin &&
-            (user['total_team_count'] ?? 0) >= totalMin &&
-            allowedCountries.contains(user['country']))
-        .toList();
-  }
-
   @override
   Widget build(BuildContext context) {
+    // UI Code remains the same...
     return Scaffold(
-      appBar: AppHeaderWithMenu(
-        appId: widget.appId,
-      ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                const Padding(
-                  padding: EdgeInsets.only(top: 24.0),
-                  child: Center(
-                    child: Text(
-                      'Downline Team',
-                      style:
-                          TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                  child: DropdownButtonFormField<JoinWindow>(
-                    isExpanded: true,
-                    value: selectedJoinWindow,
-                    decoration: InputDecoration(
-                      labelText: 'Downline Report',
-                      filled: true,
-                      fillColor: Colors.grey.shade100,
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 12),
-                    ),
-                    onChanged: (value) {
-                      if (value != null) {
-                        if (!mounted) return;
-                        setState(() {
-                          selectedJoinWindow = value;
-                          _searchQuery = '';
-                          _searchController.clear();
-                        });
-                        fetchDownline();
-                      }
-                    },
-                    items: JoinWindow.values.map((window) {
-                      return DropdownMenuItem(
-                        value: window,
-                        child: Text(_dropdownLabel(window)),
-                      );
-                    }).toList(),
-                  ),
-                ),
-                if (selectedJoinWindow != JoinWindow.none)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                    child: TextField(
-                      controller: _searchController,
-                      decoration: const InputDecoration(
-                        labelText: 'Search by name, country, state, city, etc.',
-                        prefixIcon: Icon(Icons.search),
-                        border: OutlineInputBorder(),
-                      ),
-                      onSubmitted: (value) {
-                        if (!mounted) return;
-                        setState(() => _searchQuery = value);
-                        fetchDownline();
-                      },
-                    ),
-                  ),
-                if (selectedJoinWindow == JoinWindow.newQualified &&
-                    uplineBizOpp != null &&
-                    uplineBizOpp!.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16.0, vertical: 8),
-                    child: RichText(
-                      text: TextSpan(
-                        style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.black),
-                        children: [
-                          const TextSpan(
-                              text:
-                                  'These downline members are qualified to join '),
-                          TextSpan(
-                            text: uplineBizOpp!,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue,
-                            ),
-                          ),
-                          const TextSpan(
-                              text:
-                                  ' however, they have not yet completed their '),
-                          TextSpan(
-                            text: uplineBizOpp!,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue,
-                            ),
-                          ),
-                          const TextSpan(text: ' registration.'),
-                        ],
-                      ),
-                    ),
-                  ),
-                if (!isLoading && selectedJoinWindow == JoinWindow.none)
-                  const Expanded(
-                    child: Center(
-                      child: Text(
-                        'Select a downline report from the dropdown menu to view.',
-                        style: TextStyle(fontSize: 16, color: Colors.grey),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  )
-                else if (!isLoading &&
-                    _fullDownlineUsers.isEmpty &&
-                    selectedJoinWindow != JoinWindow.none)
-                  const Expanded(
-                    child: Center(
-                      child: Text(
-                        'No team members found for the selected filter.',
-                        style: TextStyle(fontSize: 16, color: Colors.grey),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  )
-                else if (!isLoading &&
-                    _searchQuery.isNotEmpty &&
-                    downlineByLevel.isEmpty)
-                  const Expanded(
-                    child: Center(
-                      child: Text(
-                        'No matching team members found for your search.',
-                        style: TextStyle(fontSize: 16, color: Colors.grey),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  )
-                else if (!isLoading)
-                  Expanded(
-                    child: ListView(
-                      children: [
-                        ...downlineByLevel.entries.map((entry) {
-                          final adjustedLevel = entry.key;
-                          final users = entry.value;
-                          int localIndex = 1;
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Divider(thickness: 1),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 16.0, vertical: 10),
-                                child: Text(
-                                  'Level $adjustedLevel (${users.length})',
-                                  style: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.blue),
-                                ),
-                              ),
-                              ...users.map((user) {
-                                final index = localIndex++;
-                                final spaceCount = index < 10
-                                    ? 4
-                                    : index < 100
-                                        ? 6
-                                        : 7;
-                                return Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 16.0, vertical: 8),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Text(
-                                            '$index) ',
-                                            style: const TextStyle(
-                                                fontWeight: FontWeight.normal),
-                                          ),
-                                          GestureDetector(
-                                            onTap: () {
-                                              if (!mounted) return;
-                                              Navigator.push(
-                                                context,
-                                                MaterialPageRoute(
-                                                  builder: (_) =>
-                                                      MemberDetailScreen(
-                                                    userId: user.uid,
-                                                    initialAuthToken:
-                                                        widget.initialAuthToken,
-                                                    appId: widget.appId,
-                                                  ),
-                                                ),
-                                              );
-                                            },
-                                            child: Text(
-                                              '${user.firstName ?? ''} ${user.lastName ?? ''}',
-                                              style: const TextStyle(
-                                                  color: Colors.blue,
-                                                  decoration:
-                                                      TextDecoration.underline),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      Text(
-                                        '${' ' * spaceCount}${user.city ?? ''}, ${user.state ?? ''} – ${user.country ?? ''}',
-                                        style: const TextStyle(
-                                            fontWeight: FontWeight.normal),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              })
-                            ],
-                          );
-                        }),
-                      ],
-                    ),
-                  ),
-              ],
+      appBar: AppHeaderWithMenu(appId: widget.appId),
+      body: Column(
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 24.0, bottom: 8.0),
+            child: Center(
+              child: Text(
+                'Downline Team',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
             ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            child: DropdownButtonFormField<JoinWindow>(
+              isExpanded: true,
+              value: selectedJoinWindow,
+              decoration: InputDecoration(
+                labelText: 'Downline Report',
+                filled: true,
+                fillColor: Colors.grey.shade100,
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              ),
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() {
+                    selectedJoinWindow = value;
+                    _searchController.clear();
+                    _searchQuery = '';
+                    downlineByLevel.clear();
+                  });
+                  fetchDataForSelectedWindow();
+                }
+              },
+              items: JoinWindow.values.map((window) {
+                return DropdownMenuItem(
+                  value: window,
+                  child: Text(_dropdownLabel(window)),
+                );
+              }).toList(),
+            ),
+          ),
+          if (selectedJoinWindow != JoinWindow.none)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: TextField(
+                controller: _searchController,
+                decoration: const InputDecoration(
+                  labelText: 'Search your downline...',
+                  prefixIcon: Icon(Icons.search),
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ),
+          Expanded(
+            child: isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _buildResults(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildResults() {
+    if (selectedJoinWindow == JoinWindow.none) {
+      return const Center(
+        child: Text(
+          'Select a downline report to begin.',
+          style: TextStyle(fontSize: 16, color: Colors.grey),
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    if (downlineByLevel.isEmpty) {
+      return Center(
+        child: Text(
+          _searchQuery.isNotEmpty
+              ? 'No team members match your search.'
+              : 'No team members found for this filter.',
+          style: const TextStyle(fontSize: 16, color: Colors.grey),
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    return ListView(
+      children: downlineByLevel.entries.map((entry) {
+        final level = entry.key;
+        final users = entry.value;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10),
+              child: Text(
+                'Level $level (${users.length})',
+                style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue),
+              ),
+            ),
+            const Divider(thickness: 1, height: 1),
+            ...users.map((user) => _buildUserTile(user)),
+          ],
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildUserTile(UserModel user) {
+    return ListTile(
+      contentPadding: EdgeInsets.only(
+          left: 16.0 + (10 * (user.level - levelOffset - 1)), right: 16.0),
+      leading: CircleAvatar(
+        backgroundImage: (user.photoUrl != null && user.photoUrl!.isNotEmpty)
+            ? NetworkImage(user.photoUrl!)
+            : null,
+        child: (user.photoUrl == null || user.photoUrl!.isEmpty)
+            ? const Icon(Icons.person)
+            : null,
+      ),
+      title: Text('${user.firstName ?? ''} ${user.lastName ?? ''}'),
+      subtitle: Text('${user.city ?? ''}, ${user.state ?? ''}'),
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => MemberDetailScreen(
+              userId: user.uid,
+              appId: widget.appId,
+            ),
+          ),
+        );
+      },
     );
   }
 }

@@ -1,4 +1,3 @@
-// lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
@@ -7,7 +6,7 @@ import 'models/user_model.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/login_screen.dart';
 import 'services/auth_service.dart';
-import 'services/fcm_service.dart'; // Import the new service class
+import 'services/fcm_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,7 +26,6 @@ void main() async {
   } catch (e) {
     debugPrint("Firebase init error: $e");
   }
-
   runApp(const MyApp());
 }
 
@@ -36,9 +34,18 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamProvider<UserModel?>.value(
-      value: AuthService().onAuthStateChangedAndProfileVerified,
-      initialData: null,
+    return MultiProvider(
+      providers: [
+        Provider<AuthService>(create: (_) => AuthService()),
+        StreamProvider<UserModel?>(
+          create: (context) => context.read<AuthService>().user,
+          initialData: null,
+          catchError: (_, error) {
+            debugPrint("Error in auth stream: $error");
+            return null;
+          },
+        ),
+      ],
       child: MaterialApp(
         title: 'TeamBuild Pro',
         theme: ThemeData(
@@ -57,14 +64,14 @@ class AuthWrapper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final user = Provider.of<UserModel?>(context);
+    final user = context.watch<UserModel?>();
+    final appId = firebaseConfig['appId']!;
 
     if (user != null) {
-      // If the user is logged in, initialize FCM services.
-      FCMService().initialize();
-      return DashboardScreen(appId: firebaseConfig['appId']!);
+      FCMService().initialize(context);
+      return DashboardScreen(appId: appId);
     } else {
-      return LoginScreen(appId: firebaseConfig['appId']!);
+      return LoginScreen(appId: appId);
     }
   }
 }

@@ -1,8 +1,9 @@
+// lib/screens/new_registration_screen.dart
+
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../data/states_by_country.dart';
 import '../widgets/header_widgets.dart';
@@ -23,92 +24,26 @@ class NewRegistrationScreen extends StatefulWidget {
 
 class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
   final _formKey = GlobalKey<FormState>();
-  final TextEditingController _firstNameController = TextEditingController();
-  final TextEditingController _lastNameController = TextEditingController();
-  final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
-  final TextEditingController _confirmPasswordController =
-      TextEditingController();
-  final TextEditingController _cityController = TextEditingController();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
+  final _cityController = TextEditingController();
+  final _referralCodeController = TextEditingController();
 
   String? _selectedCountry;
   String? _selectedState;
-  String? _sponsorName;
-  String? _initialReferralCode;
-  bool _isFirstUser = false;
-  List<String> _availableCountries = [];
   bool _isLoading = false;
-  bool isDevMode = true;
 
   List<String> get states => statesByCountry[_selectedCountry] ?? [];
+  List<String> get countries => statesByCountry.keys.toList();
 
   @override
   void initState() {
     super.initState();
-    _initScreenData();
-  }
-
-  Future<void> _initScreenData() async {
-    setState(() => _isLoading = true);
-
-    _initialReferralCode = widget.referralCode;
-
-    if (isDevMode && _initialReferralCode == null) {
-      _initialReferralCode = 'DNK82TCW';
-    }
-
-    final code = _initialReferralCode;
-
-    if (code == null || code.isEmpty) {
-      setState(() {
-        _isFirstUser = true;
-        _availableCountries = statesByCountry.keys.toList();
-        _isLoading = false;
-      });
-      return;
-    }
-
-    try {
-      final uri = Uri.parse(
-          'https://us-central1-teambuilder-plus-fe74d.cloudfunctions.net/getUserByReferralCode?code=$code');
-      final response = await http.get(uri);
-
-      if (mounted && response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final sponsorName =
-            '${data['firstName'] ?? ''} ${data['lastName'] ?? ''}'.trim();
-        final uplineAdminUid = data['upline_admin'];
-
-        if (uplineAdminUid != null) {
-          final docSnapshot = await FirebaseFirestore.instance
-              .collection('admin_settings')
-              .doc(uplineAdminUid)
-              .get();
-
-          if (mounted &&
-              docSnapshot.exists &&
-              docSnapshot.data()?['countries'] is List) {
-            setState(() {
-              _sponsorName = sponsorName;
-              _availableCountries =
-                  List<String>.from(docSnapshot.data()!['countries']);
-              _isFirstUser = false;
-              _isLoading = false;
-            });
-            return;
-          }
-        }
-      }
-      throw Exception('Could not resolve referral and country data.');
-    } catch (e) {
-      debugPrint("Error in non-admin flow, falling back to admin defaults: $e");
-      if (mounted) {
-        setState(() {
-          _isFirstUser = true;
-          _availableCountries = statesByCountry.keys.toList();
-          _isLoading = false;
-        });
-      }
+    if (widget.referralCode != null) {
+      _referralCodeController.text = widget.referralCode!;
     }
   }
 
@@ -120,49 +55,61 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     _cityController.dispose();
+    _referralCodeController.dispose();
     super.dispose();
   }
 
   Future<void> _register() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate() || _isLoading) return;
     setState(() => _isLoading = true);
-    final email = _emailController.text.trim();
-    final password = _passwordController.text.trim();
+
+    // MODIFIED: Capture the auth service before the async gap.
+    final authService = context.read<AuthService>();
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+
     try {
       final HttpsCallable callable =
           FirebaseFunctions.instance.httpsCallable('registerUser');
+
       await callable.call(<String, dynamic>{
-        'email': email,
-        'password': password,
+        'email': _emailController.text.trim(),
+        'password': _passwordController.text,
         'firstName': _firstNameController.text.trim(),
         'lastName': _lastNameController.text.trim(),
+        'sponsorReferralCode': _referralCodeController.text.trim(),
         'country': _selectedCountry,
         'state': _selectedState,
         'city': _cityController.text.trim(),
-        'referralCode': _initialReferralCode,
       });
-      await AuthService().login(email, password);
 
-      // MODIFIED: On success, pop all screens until we get back to the root,
-      // which will be the new home screen provided by the AuthWrapper.
-      if (mounted) {
-        Navigator.of(context).popUntil((route) => route.isFirst);
-      }
+      // After successful registration, sign the user in using the captured service.
+      await authService.signInWithEmailAndPassword(
+        _emailController.text.trim(),
+        _passwordController.text,
+      );
+
+      // AuthWrapper in main.dart handles navigation. No context needed here.
     } on FirebaseFunctionsException catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(e.message ?? 'An unknown error occurred.')));
-      }
+      _showErrorSnackbar(scaffoldMessenger,
+          e.message ?? 'Registration failed. Please try again.');
+    } on FirebaseAuthException catch (e) {
+      _showErrorSnackbar(
+          scaffoldMessenger, e.message ?? 'Login after registration failed.');
     } catch (e) {
+      _showErrorSnackbar(
+          scaffoldMessenger, 'An unexpected error occurred. Please try again.');
+    } finally {
       if (mounted) {
         setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('An unexpected error occurred: $e')));
       }
     }
-    // REMOVED: Finally block is no longer needed as state is handled
-    // in the success (pop) or failure (catch) cases.
+  }
+
+  void _showErrorSnackbar(ScaffoldMessengerState messenger, String message) {
+    messenger.showSnackBar(SnackBar(
+      content: Text(message),
+      backgroundColor: Colors.red,
+    ));
   }
 
   @override
@@ -170,24 +117,12 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
     return Scaffold(
       appBar: AppHeaderWithMenu(appId: widget.appId),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(24.0),
         child: Form(
           key: _formKey,
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (_sponsorName != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12.0),
-                  child: Text('Your Sponsor is $_sponsorName',
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
-                )
-              else if (_isFirstUser)
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 12.0),
-                  child: Text(
-                      'You are creating your own TeamBuild Pro organization.',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
-                ),
               TextFormField(
                   controller: _firstNameController,
                   decoration: const InputDecoration(labelText: 'First Name'),
@@ -200,17 +135,15 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
               const SizedBox(height: 12),
               TextFormField(
                   controller: _emailController,
-                  decoration: const InputDecoration(labelText: 'Email'),
+                  decoration: const InputDecoration(labelText: 'Email Address'),
                   keyboardType: TextInputType.emailAddress,
-                  validator: (v) => v == null || !v.contains('@')
-                      ? 'Enter a valid email'
-                      : null),
+                  validator: (v) => v == null || v.isEmpty ? 'Required' : null),
               const SizedBox(height: 12),
               TextFormField(
                   controller: _passwordController,
                   decoration: const InputDecoration(labelText: 'Password'),
                   obscureText: true,
-                  validator: (v) => v == null || v.length < 6
+                  validator: (v) => (v?.length ?? 0) < 6
                       ? 'Password must be at least 6 characters'
                       : null),
               const SizedBox(height: 12),
@@ -223,10 +156,15 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
                       ? 'Passwords do not match'
                       : null),
               const SizedBox(height: 12),
+              TextFormField(
+                  controller: _referralCodeController,
+                  decoration: const InputDecoration(
+                      labelText: 'Sponsor Code (Optional)')),
+              const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 value: _selectedCountry,
                 hint: const Text('Select Country'),
-                items: _availableCountries
+                items: countries
                     .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                     .toList(),
                 onChanged: (v) => setState(() {
@@ -258,7 +196,12 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
                 child: ElevatedButton(
                   onPressed: _isLoading ? null : _register,
                   child: _isLoading
-                      ? const CircularProgressIndicator(color: Colors.white)
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 3),
+                        )
                       : const Text('Create Account'),
                 ),
               ),

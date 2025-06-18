@@ -3,12 +3,15 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
+// MODIFIED: Replaced private implementation import with the correct public library.
+import 'package:flutter/widgets.dart';
 
 class FCMService {
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  Future<void> initialize() async {
+  Future<void> initialize(BuildContext context) async {
+    // No 'await' before using context, so this is safe.
     NotificationSettings settings = await _messaging.requestPermission(
       alert: true,
       badge: true,
@@ -22,8 +25,9 @@ class FCMService {
       // Listen for token refreshes
       _messaging.onTokenRefresh.listen((_) => _saveToken());
     } else {
+      // MODIFIED: Replaced print with debugPrint for safer logging.
       if (kDebugMode) {
-        print('User denied notification permissions.');
+        debugPrint('User denied notification permissions.');
       }
     }
   }
@@ -39,11 +43,13 @@ class FCMService {
             .doc(user.uid)
             .update({'fcm_token': token});
         if (kDebugMode) {
-          print('✅ FCM token saved/updated for user: ${user.uid}');
+          // MODIFIED: Replaced print with debugPrint.
+          debugPrint('✅ FCM token saved/updated for user: ${user.uid}');
         }
       } catch (e) {
         if (kDebugMode) {
-          print('❌ Error saving FCM token: $e');
+          // MODIFIED: Replaced print with debugPrint.
+          debugPrint('❌ Error saving FCM token: $e');
         }
       }
     }

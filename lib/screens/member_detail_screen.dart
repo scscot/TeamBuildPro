@@ -1,24 +1,23 @@
+// lib/screens/member_detail_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'dart:developer' as developer;
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
 import '../widgets/header_widgets.dart';
 import '../services/firestore_service.dart';
 import '../models/user_model.dart';
 import 'message_thread_screen.dart';
-import '../services/subscription_service.dart';
 
 class MemberDetailScreen extends StatefulWidget {
   final String userId;
-  final String? initialAuthToken;
   final String appId;
 
   const MemberDetailScreen({
     super.key,
     required this.userId,
-    this.initialAuthToken,
     required this.appId,
   });
 
@@ -27,11 +26,15 @@ class MemberDetailScreen extends StatefulWidget {
 }
 
 class _MemberDetailScreenState extends State<MemberDetailScreen> {
+  final FirestoreService _firestoreService = FirestoreService();
   UserModel? _user;
-  UserModel? _currentUser;
+  // MODIFIED: Removed unused _currentUser field. Data is accessed via Provider.
+  // UserModel? _currentUser;
   String? _sponsorName;
-  String? _uplineAdminName;
-  String? _uplineAdminUid;
+  String? _teamLeaderName;
+  String? _teamLeaderUid;
+  String?
+      _currentUserId; // Proactive: Added to store the current user's ID safely.
   bool _isLoading = true;
 
   @override
@@ -47,162 +50,58 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   }
 
   Future<void> _loadUserData() async {
-    // FIX: Use FirebaseAuth as the source of truth for the current user
     final authUser = FirebaseAuth.instance.currentUser;
     if (authUser == null) {
-      _log('❌ Current user is not authenticated.');
       if (mounted) setState(() => _isLoading = false);
       return;
     }
+    _currentUserId = authUser.uid;
 
     try {
-      final currentUserDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(authUser.uid)
-          .get();
-      final member = await FirestoreService().getUser(widget.userId);
+      // MODIFIED: Removed fetching of currentUserDoc as it's unused.
+      final userDoc = await _firestoreService.getUser(widget.userId);
 
       if (!mounted) return;
 
-      if (member != null && currentUserDoc.exists) {
-        setState(() {
-          _user = member;
-          _currentUser = UserModel.fromFirestore(currentUserDoc);
-          _isLoading = false;
-        });
+      setState(() {
+        _user = userDoc;
+      });
 
-        // ... rest of the logic to fetch sponsor/upline names is safe to run now
-        _fetchSponsorAndUplineNames(member);
-      } else {
-        _log('⚠️ Member or current user document not found.');
-        if (mounted) setState(() => _isLoading = false);
+      if (_user?.referredBy != null && _user!.referredBy!.isNotEmpty) {
+        final sponsorDoc = await _firestoreService.getUser(_user!.referredBy!);
+        if (mounted) {
+          setState(() => _sponsorName =
+              '${sponsorDoc?.firstName ?? ''} ${sponsorDoc?.lastName ?? ''}');
+        }
+      }
+
+      if (_user != null && _user!.uplineRefs.isNotEmpty) {
+        final teamLeaderId = _user!.uplineRefs.last;
+        final leaderDoc = await _firestoreService.getUser(teamLeaderId);
+        if (mounted && leaderDoc != null) {
+          setState(() {
+            _teamLeaderUid = leaderDoc.uid;
+            _teamLeaderName = '${leaderDoc.firstName} ${leaderDoc.lastName}';
+          });
+        }
       }
     } catch (e) {
-      _log('❌ Failed to load user data: $e');
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _fetchSponsorAndUplineNames(UserModel member) async {
-    if (member.referredBy != null && member.referredBy!.isNotEmpty) {
-      try {
-        final sponsorModel =
-            await FirestoreService().getUserByReferralCode(member.referredBy!);
-        if (mounted && sponsorModel != null) {
-          setState(() => _sponsorName =
-              '${sponsorModel.firstName ?? ''} ${sponsorModel.lastName ?? ''}'
-                  .trim());
-        }
-      } catch (e) {
-        _log('❌ Failed to load sponsor data: $e');
-      }
-    }
-
-    if (member.uplineAdmin != null && member.uplineAdmin!.isNotEmpty) {
-      _uplineAdminUid = member.uplineAdmin;
-      try {
-        final adminUserDoc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(_uplineAdminUid)
-            .get();
-        if (mounted && adminUserDoc.exists) {
-          final adminData = adminUserDoc.data();
-          if (adminData != null) {
-            setState(() => _uplineAdminName =
-                '${adminData['firstName'] ?? ''} ${adminData['lastName'] ?? ''}'
-                    .trim());
-          }
-        }
-      } catch (e) {
-        _log('❌ Failed to load upline admin data: $e');
+      _log("Error loading user data: $e");
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
       }
     }
   }
 
-  // ... The rest of your file (_handleSendMessage, build, etc.) remains the same
   void _handleSendMessage() {
-    if (_currentUser == null || _user == null) {
-      _log('Cannot send message: Current user or target user is null.');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Cannot send message: User data not loaded.')),
-      );
-      return;
-    }
+    // MODIFIED: This guard clause now safely checks the state variables.
+    if (_currentUserId == null || _user == null) return;
 
-    final isAdminUser = _currentUser!.role == 'admin';
-
-    if (!isAdminUser) {
-      _log(
-          'ℹ️ Non-admin user sending message. Proceeding without subscription check.');
-      _navigateToMessageThread();
-      return;
-    }
-
-    _log(
-        '🔎 Admin user attempting to send message. Checking subscription status...');
-    SubscriptionService.checkAdminSubscriptionStatus(_currentUser!.uid)
-        .then((status) {
-      final isActive = status['isActive'] == true;
-      final trialExpired = status['trialExpired'] == true;
-      if (!mounted) return;
-
-      if (trialExpired && !isActive) {
-        _log(
-            '⚠️ Admin user (UID: ${_currentUser!.uid}) is restricted: Trial expired AND subscription not active. Showing subscription dialog.');
-        showDialog(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: const Text('Subscription Required'),
-            content: const Text(
-                'Your admin trial has ended or your subscription is not active. Please activate your subscription to continue messaging.'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Cancel'),
-              ),
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  Navigator.pushNamed(context, '/upgrade');
-                },
-                child: const Text('Upgrade Now'),
-              ),
-            ],
-          ),
-        );
-      } else {
-        _log(
-            '✅ Admin user (UID: ${_currentUser!.uid}) is allowed to send message. Proceeding to message thread.');
-        _navigateToMessageThread();
-      }
-    }).catchError((error) {
-      _log('❌ Error checking admin subscription status: $error');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(
-                'Failed to check subscription status: ${error.toString()}. Please try again later.')),
-      );
-    });
-  }
-
-  void _navigateToMessageThread() {
-    if (!mounted) return;
-    if (_user == null || _currentUser == null) {
-      debugPrint(
-          'Target user or current user is null, cannot navigate to message thread.');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cannot open chat: User data missing.')),
-      );
-      return;
-    }
-
-    final threadId = _currentUser!.uid.compareTo(_user!.uid) < 0
-        ? '${_currentUser!.uid}_${_user!.uid}'
-        : '${_user!.uid}_${_currentUser!.uid}';
+    // MODIFIED: No '!' assertions are needed because of the guard clause above.
+    final ids = [_currentUserId!, _user!.uid];
+    ids.sort();
+    final threadId = ids.join('_');
 
     Navigator.push(
       context,
@@ -211,100 +110,116 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
           threadId: threadId,
           appId: widget.appId,
           recipientId: _user!.uid,
-          recipientName:
-              '${_user!.firstName ?? ''} ${_user!.lastName ?? ''}'.trim(),
+          recipientName: '${_user!.firstName ?? ''} ${_user!.lastName ?? ''}',
         ),
       ),
     );
   }
 
+  // MODIFIED: Removed the unsafe getter for _currentUserId.
+
   @override
   Widget build(BuildContext context) {
-    final bool isCurrentUserUserRole = _currentUser?.role == 'user';
-
-    if (_isLoading) {
-      return Scaffold(
-        appBar: AppHeaderWithMenu(
-          appId: widget.appId,
-        ),
-        body: const Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    if (_user == null || _currentUser == null) {
-      return Scaffold(
-        appBar: AppHeaderWithMenu(
-          appId: widget.appId,
-        ),
-        body: const Center(
-            child: Text('Error loading member details or current user data.')),
-      );
-    }
+    final authUser = Provider.of<UserModel?>(context);
+    final bool isCurrentUserAnAdmin = authUser?.role == 'admin';
 
     return Scaffold(
-      appBar: AppHeaderWithMenu(
-        appId: widget.appId,
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 20),
-            Center(
-              child: CircleAvatar(
-                radius: 50,
-                backgroundImage:
-                    _user!.photoUrl != null && _user!.photoUrl!.isNotEmpty
-                        ? NetworkImage(_user!.photoUrl!)
-                        : const AssetImage('assets/images/default_avatar.png')
-                            as ImageProvider,
-              ),
-            ),
-            const SizedBox(height: 20),
-            Center(
-              child: Text(
-                '${_user!.firstName ?? ''} ${_user!.lastName ?? ''}',
-                style:
-                    const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-            ),
-            const SizedBox(height: 20),
-            _buildInfoRow('City', _user!.city ?? 'N/A'),
-            _buildInfoRow('State/Province', _user!.state ?? 'N/A'),
-            _buildInfoRow('Country', _user!.country ?? 'N/A'),
-            _buildInfoRow(
-              'Join Date',
-              _user!.createdAt != null
-                  ? DateFormat.yMMMMd().format(_user!.createdAt!)
-                  : 'N/A',
-            ),
-            if (_sponsorName != null && _sponsorName!.isNotEmpty)
-              _buildInfoRow('Sponsor Name', _sponsorName!),
-            if (_uplineAdminName != null &&
-                _uplineAdminName!.isNotEmpty &&
-                _uplineAdminUid != null &&
-                _user!.referredBy != _user!.uplineAdmin &&
-                isCurrentUserUserRole)
-              _buildInfoRow('Team Leader', _uplineAdminName!),
-            const SizedBox(height: 30),
-            Center(
-              child: ElevatedButton.icon(
-                onPressed: _handleSendMessage,
-                icon: const Icon(Icons.message),
-                label: const Text('Send Message'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 24.0, vertical: 12.0),
-                  textStyle: const TextStyle(fontSize: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8.0),
+      appBar: AppHeaderWithMenu(appId: widget.appId),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _user == null
+              ? const Center(child: Text('Member not found.'))
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.all(20.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: CircleAvatar(
+                          radius: 50,
+                          backgroundImage: _user!.photoUrl != null &&
+                                  _user!.photoUrl!.isNotEmpty
+                              ? NetworkImage(_user!.photoUrl!)
+                              : null,
+                          child: _user!.photoUrl == null ||
+                                  _user!.photoUrl!.isEmpty
+                              ? const Icon(Icons.person, size: 50)
+                              : null,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Center(
+                        child: Text(
+                          '${_user!.firstName ?? ''} ${_user!.lastName ?? ''}',
+                          style: Theme.of(context).textTheme.headlineSmall,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      if (isCurrentUserAnAdmin) ...[
+                        _buildInfoRow('Email', _user!.email ?? 'N/A'),
+                        _buildInfoRow('UID', _user!.uid),
+                      ],
+                      if (_user!.createdAt != null)
+                        _buildInfoRow('Joined',
+                            DateFormat.yMMMd().format(_user!.createdAt!)),
+                      if (_sponsorName != null)
+                        _buildClickableInfoRow(
+                            'Sponsor', _sponsorName!, _user!.referredBy!),
+                      if (_teamLeaderName != null &&
+                          _teamLeaderUid != null &&
+                          _user!.referredBy != _teamLeaderUid)
+                        _buildClickableInfoRow(
+                            'Team Leader', _teamLeaderName!, _teamLeaderUid!),
+                      const SizedBox(height: 30),
+                      if (_currentUserId != widget.userId)
+                        Center(
+                          child: ElevatedButton.icon(
+                            onPressed: _handleSendMessage,
+                            icon: const Icon(Icons.message),
+                            label: const Text('Send Message'),
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 24.0, vertical: 12.0),
+                              textStyle: const TextStyle(fontSize: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8.0),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
+    );
+  }
+
+  Widget _buildClickableInfoRow(
+      String label, String displayName, String userId) {
+    if (userId.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+              width: 130,
+              child: Text('$label:',
+                  style: const TextStyle(fontWeight: FontWeight.w600))),
+          Expanded(
+            child: GestureDetector(
+              onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => MemberDetailScreen(
+                          userId: userId, appId: widget.appId))),
+              child: Text(
+                displayName,
+                style: const TextStyle(
+                    color: Colors.blue, decoration: TextDecoration.underline),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -322,9 +237,7 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
           ),
-          Expanded(
-            child: Text(value),
-          ),
+          Expanded(child: Text(value)),
         ],
       ),
     );

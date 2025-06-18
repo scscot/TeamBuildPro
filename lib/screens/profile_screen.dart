@@ -1,14 +1,14 @@
 // lib/screens/profile_screen.dart
-// ignore_for_file: use_build_context_synchronously
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:provider/provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_model.dart';
 import '../screens/member_detail_screen.dart';
-import 'edit_profile_screen.dart';
+import '../screens/edit_profile_screen.dart';
+import '../services/auth_service.dart';
+import '../services/firestore_service.dart';
 import '../widgets/header_widgets.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -20,85 +20,61 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  bool _biometricEnabled = false; // This state is local and fine.
+  final FirestoreService _firestoreService = FirestoreService();
+  bool _biometricEnabled = false;
   bool _biometricsAvailable = false;
+  String? _sponsorName;
 
   @override
   void initState() {
     super.initState();
-    // Moved biometric settings check here. It doesn't depend on user data.
     _checkBiometricSupport();
     _loadBiometricSetting();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _loadSponsorName();
+      }
+    });
   }
 
   Future<void> _checkBiometricSupport() async {
     final auth = LocalAuthentication();
-    final available =
-        await auth.canCheckBiometrics && await auth.isDeviceSupported();
-    if (mounted) setState(() => _biometricsAvailable = available);
+    try {
+      final available =
+          await auth.canCheckBiometrics && await auth.isDeviceSupported();
+      if (mounted) setState(() => _biometricsAvailable = available);
+    } catch (e) {
+      if (mounted) setState(() => _biometricsAvailable = false);
+    }
   }
 
   Future<void> _loadBiometricSetting() async {
-    // This logic needs a replacement for SessionManager. For now, we'll disable it.
-    // A proper solution would use a package like shared_preferences.
-    // setState(() => _biometricEnabled = false);
+    // This logic would require a local storage solution like shared_preferences.
   }
 
   Future<void> _toggleBiometric(bool value) async {
-    // Logic for saving biometric preference would go here, likely to shared_preferences.
+    // This would save the setting to local storage.
     setState(() => _biometricEnabled = value);
   }
 
-  Future<Map<String, String?>> _fetchSponsorAndUplineNames(
-      UserModel user) async {
-    String? sponsorName;
-    String? uplineAdminName;
-
-    if (user.referredBy != null && user.referredBy!.isNotEmpty) {
-      try {
-        final sponsorSnapshot = await FirebaseFirestore.instance
-            .collection('users')
-            .where('referralCode', isEqualTo: user.referredBy)
-            .limit(1)
-            .get();
-        if (sponsorSnapshot.docs.isNotEmpty) {
-          final sponsorData = sponsorSnapshot.docs.first.data();
-          sponsorName =
-              '${sponsorData['firstName'] ?? ''} ${sponsorData['lastName'] ?? ''}'
-                  .trim();
+  void _loadSponsorName() {
+    final user = Provider.of<UserModel?>(context, listen: false);
+    if (user?.referredBy != null && user!.referredBy!.isNotEmpty) {
+      _firestoreService.getUser(user.referredBy!).then((sponsor) {
+        if (mounted && sponsor != null) {
+          setState(() {
+            _sponsorName = '${sponsor.firstName} ${sponsor.lastName}';
+          });
         }
-      } catch (e) {
-        debugPrint('❌ Failed to load sponsor data: $e');
-      }
+      });
     }
-
-    if (user.uplineAdmin != null && user.uplineAdmin!.isNotEmpty) {
-      try {
-        final adminDoc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uplineAdmin)
-            .get();
-        if (adminDoc.exists) {
-          final adminData = adminDoc.data();
-          if (adminData != null) {
-            uplineAdminName =
-                '${adminData['firstName'] ?? ''} ${adminData['lastName'] ?? ''}'
-                    .trim();
-          }
-        }
-      } catch (e) {
-        debugPrint('❌ Failed to load upline admin data: $e');
-      }
-    }
-    return {'sponsorName': sponsorName, 'uplineAdminName': uplineAdminName};
   }
 
   @override
   Widget build(BuildContext context) {
-    // Get the user directly from the Provider.
-    final user = Provider.of<UserModel?>(context);
+    final currentUser = Provider.of<UserModel?>(context);
 
-    if (user == null) {
+    if (currentUser == null) {
       return Scaffold(
         appBar: AppHeaderWithMenu(appId: widget.appId),
         body: const Center(child: CircularProgressIndicator()),
@@ -108,94 +84,78 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Scaffold(
       appBar: AppHeaderWithMenu(appId: widget.appId),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(20.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Padding(
-              padding: EdgeInsets.only(top: 16.0, bottom: 24.0),
-              child: Center(
-                  child: Text('My Profile',
-                      style: TextStyle(
-                          fontSize: 20, fontWeight: FontWeight.bold))),
-            ),
             Center(
-              child: CircleAvatar(
-                radius: 50,
-                backgroundImage:
-                    user.photoUrl != null && user.photoUrl!.isNotEmpty
-                        ? NetworkImage(user.photoUrl!)
-                        : const AssetImage('assets/images/default_avatar.png')
-                            as ImageProvider,
+              child: Column(
+                children: [
+                  CircleAvatar(
+                    radius: 50,
+                    backgroundImage: currentUser.photoUrl != null &&
+                            currentUser.photoUrl!.isNotEmpty
+                        ? NetworkImage(currentUser.photoUrl!)
+                        : null,
+                    child: currentUser.photoUrl == null ||
+                            currentUser.photoUrl!.isEmpty
+                        ? const Icon(Icons.person, size: 50)
+                        : null,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    '${currentUser.firstName ?? ''} ${currentUser.lastName ?? ''}',
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(currentUser.email ?? 'No email'),
+                ],
               ),
             ),
+            const SizedBox(height: 24),
+            const Divider(),
+            _buildInfoRow('Referral Code', currentUser.referralCode ?? 'N/A'),
+            if (_sponsorName != null)
+              _buildClickableInfoRow(
+                  'Sponsor', _sponsorName!, currentUser.referredBy ?? ''),
+            if (currentUser.createdAt != null)
+              _buildInfoRow(
+                  'Joined', DateFormat.yMMMd().format(currentUser.createdAt!)),
             const SizedBox(height: 20),
-            _buildInfoRow('Name', '${user.firstName} ${user.lastName}'),
-            _buildInfoRow('Email', user.email ?? 'N/A'),
-            _buildInfoRow('City', user.city ?? 'N/A'),
-            _buildInfoRow('State/Province', user.state ?? 'N/A'),
-            _buildInfoRow('Country', user.country ?? 'N/A'),
-            _buildInfoRow(
-                'Join Date',
-                user.createdAt != null
-                    ? DateFormat.yMMMMd().format(user.createdAt!)
-                    : 'N/A'),
-
-            // Use a FutureBuilder for data that depends on the main user object.
-            FutureBuilder<Map<String, String?>>(
-              future: _fetchSponsorAndUplineNames(user),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 6.0),
-                      child: SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                          )));
-                }
-
-                final sponsorName = snapshot.data?['sponsorName'];
-                final uplineName = snapshot.data?['uplineAdminName'];
-
-                return Column(
-                  children: [
-                    if (sponsorName != null &&
-                        sponsorName.isNotEmpty &&
-                        user.referredBy != null)
-                      _buildClickableInfoRow(
-                          'Sponsor Name', sponsorName, user.referredBy!),
-                    if (uplineName != null &&
-                        uplineName.isNotEmpty &&
-                        user.uplineAdmin != null &&
-                        user.referredBy != user.uplineAdmin)
-                      _buildClickableInfoRow(
-                          'Team Leader', uplineName, user.uplineAdmin!),
-                  ],
-                );
-              },
-            ),
-
-            const SizedBox(height: 30),
             Center(
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) =>
-                          EditProfileScreen(user: user, appId: widget.appId)));
-                },
-                icon: const Icon(Icons.edit),
-                label: const Text('Edit Profile'),
+              child: ElevatedButton(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => EditProfileScreen(
+                      user: currentUser,
+                      appId: widget.appId,
+                    ),
+                  ),
+                ),
+                child: const Text('Edit Profile'),
               ),
             ),
-            const SizedBox(height: 20),
+            const Divider(height: 40),
+            Text('Security Settings',
+                style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 10),
             if (_biometricsAvailable)
               SwitchListTile(
                 title: const Text('Enable Face ID / Touch ID'),
                 value: _biometricEnabled,
                 onChanged: _toggleBiometric,
               ),
+            // MODIFIED: Removed the Change Password ListTile
+            const Divider(height: 40),
+            Center(
+              child: ElevatedButton(
+                onPressed: () => context.read<AuthService>().signOut(),
+                style:
+                    ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+                child: const Text('Logout'),
+              ),
+            )
           ],
         ),
       ),
@@ -204,6 +164,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildClickableInfoRow(
       String label, String displayName, String userId) {
+    if (userId.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6.0),
       child: Row(
