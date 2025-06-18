@@ -22,9 +22,11 @@ class UserModel {
   final String? bizOpp;
   final String? role;
   final DateTime? bizVisitDate;
+  final String? sponsorId;
 
   UserModel({
     required this.uid,
+    this.sponsorId,
     this.email,
     this.firstName,
     this.lastName,
@@ -66,6 +68,7 @@ class UserModel {
       firstName: map['firstName'],
       lastName: map['lastName'],
       country: map['country'],
+      sponsorId: map['sponsor_id'],
       state: map['state'],
       city: map['city'],
       referralCode: map['referralCode'],
@@ -101,6 +104,7 @@ class UserModel {
       'joined': joined != null ? Timestamp.fromDate(joined!) : null,
       'level': level,
       'qualified_date': qualifiedDate,
+      'sponsor_id': sponsorId, // MODIFIED
       'upline_refs': uplineRefs,
       'direct_sponsor_count': directSponsorCount,
       'total_team_count': totalTeamCount,
