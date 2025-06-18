@@ -10,22 +10,12 @@ import 'services/fcm_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  try {
-    if (Firebase.apps.isEmpty) {
-      await Firebase.initializeApp(
-        options: FirebaseOptions(
-          apiKey: firebaseConfig['apiKey']!,
-          authDomain: firebaseConfig['authDomain']!,
-          projectId: firebaseConfig['projectId']!,
-          storageBucket: firebaseConfig['storageBucket']!,
-          messagingSenderId: firebaseConfig['messagingSenderId']!,
-          appId: firebaseConfig['appId']!,
-        ),
-      );
-    }
-  } catch (e) {
-    debugPrint("Firebase init error: $e");
-  }
+
+  // MODIFIED: The initialization logic is simplified.
+  // Since AppDelegate now handles configuration, Dart only needs to
+  // connect to the existing native Firebase instance.
+  await Firebase.initializeApp();
+
   runApp(const MyApp());
 }
 
