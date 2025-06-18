@@ -1,3 +1,6 @@
+// lib/widgets/header_widgets.dart
+// ignore_for_file: use_build_context_synchronously
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
@@ -39,6 +42,8 @@ class AppHeaderWithMenu extends StatelessWidget implements PreferredSizeWidget {
     final user = Provider.of<UserModel?>(context);
 
     return AppBar(
+      // MODIFIED: Set the background color to lavender
+      backgroundColor: const Color(0xFFE6E6FA),
       automaticallyImplyLeading: false,
       leading: _shouldShowBackButton(context)
           ? const BackButton()
@@ -46,7 +51,9 @@ class AppHeaderWithMenu extends StatelessWidget implements PreferredSizeWidget {
       title: GestureDetector(
         onTap: () => Navigator.pushReplacement(context,
             MaterialPageRoute(builder: (_) => DashboardScreen(appId: appId))),
-        child: const Text('TeamBuild Pro', style: TextStyle(fontSize: 18)),
+        // MODIFIED: Updated the text style for the title
+        child: const Text('TeamBuild Pro',
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
       ),
       centerTitle: true,
       actions: [
