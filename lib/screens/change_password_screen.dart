@@ -1,35 +1,43 @@
-// change_password_screen.dart — Modal stub
+// lib/screens/change_password_screen.dart
 
 import 'package:flutter/material.dart';
+import '../widgets/header_widgets.dart';
 
-class ChangePasswordScreen extends StatelessWidget {
-  const ChangePasswordScreen({super.key});
+class ChangePasswordScreen extends StatefulWidget {
+  final String appId;
+
+  const ChangePasswordScreen({
+    super.key,
+    required this.appId,
+  });
+
+  @override
+  // ignore: library_private_types_in_public_api
+  _ChangePasswordScreenState createState() => _ChangePasswordScreenState();
+}
+
+class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
+  // Add TextEditingControllers for old and new passwords
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: MediaQuery.of(context).viewInsets,
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Change My Password',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            const Text('Password change functionality will be added here.'),
-            const SizedBox(height: 24),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Close'),
+    return Scaffold(
+      appBar: AppHeaderWithMenu(appId: widget.appId),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                'Change Password',
+                style: Theme.of(context).textTheme.headlineSmall,
               ),
-            ),
-          ],
+              const SizedBox(height: 20),
+              const Text('TODO: Implement change password form here.'),
+              // Add form fields for changing password
+            ],
+          ),
         ),
       ),
     );

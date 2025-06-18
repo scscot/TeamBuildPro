@@ -1,53 +1,42 @@
-// lib/services/auth_service.dart
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_model.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  Stream<UserModel?> get onAuthStateChangedAndProfileVerified {
-    return _auth.authStateChanges().asyncMap((User? user) async {
-      if (user == null) {
+  Stream<UserModel?> get user {
+    return _auth.authStateChanges().asyncMap((firebaseUser) async {
+      if (firebaseUser == null) {
         return null;
       }
-      // The stream's only job is to check for a corresponding profile.
-      final userDoc = await _firestore.collection('users').doc(user.uid).get();
+      final userDoc = await _db.collection('users').doc(firebaseUser.uid).get();
       if (userDoc.exists) {
         return UserModel.fromFirestore(userDoc);
-      } else {
-        // If no profile exists for an authenticated user, they are not fully logged in.
-        // The cleanup is now handled by the client in LoginScreen.
-        return null;
       }
+      return null;
     });
   }
 
-  Future<void> login(String email, String password) async {
+  Future<UserCredential?> signInWithEmailAndPassword(
+      String email, String password) async {
     try {
-      await _auth.signInWithEmailAndPassword(email: email, password: password);
-    } on FirebaseAuthException catch (e) {
-      throw Exception(_getFirebaseAuthErrorMessage(e.code));
+      return await _auth.signInWithEmailAndPassword(
+          email: email, password: password);
     } catch (e) {
-      throw Exception('An unexpected error occurred: $e');
+      // Re-throw the exception to be handled in the UI
+      rethrow;
     }
+  }
+
+  Future<UserCredential> registerWithEmailAndPassword(
+      String email, String password) async {
+    return await _auth.createUserWithEmailAndPassword(
+        email: email, password: password);
   }
 
   Future<void> signOut() async {
     await _auth.signOut();
-  }
-
-  String _getFirebaseAuthErrorMessage(String code) {
-    switch (code) {
-      case 'user-not-found':
-        return 'No user found for that email.';
-      case 'wrong-password':
-        return 'Wrong password provided.';
-      case 'email-already-in-use':
-        return 'The email address is already in use by another account.';
-      default:
-        return 'Authentication failed. Please try again.';
-    }
   }
 }

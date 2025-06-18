@@ -11,7 +11,6 @@ import 'services/fcm_service.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
-    // Using your exact, correct initialization logic.
     if (Firebase.apps.isEmpty) {
       await Firebase.initializeApp(
         options: FirebaseOptions(
@@ -35,13 +34,11 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // REVISED: Use MultiProvider to provide services cleanly.
     return MultiProvider(
       providers: [
         Provider<AuthService>(create: (_) => AuthService()),
         StreamProvider<UserModel?>(
-          create: (context) =>
-              context.read<AuthService>().onAuthStateChangedAndProfileVerified,
+          create: (context) => context.read<AuthService>().user,
           initialData: null,
           catchError: (_, error) {
             debugPrint("Error in auth stream: $error");
@@ -67,14 +64,14 @@ class AuthWrapper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // REVISED: Using context.watch is the modern, correct way to listen to a Provider.
     final user = context.watch<UserModel?>();
+    final appId = firebaseConfig['appId']!;
 
     if (user != null) {
-      FCMService().initialize();
-      return DashboardScreen(appId: firebaseConfig['appId']!);
+      FCMService().initialize(context);
+      return DashboardScreen(appId: appId);
     } else {
-      return LoginScreen(appId: firebaseConfig['appId']!);
+      return LoginScreen(appId: appId);
     }
   }
 }

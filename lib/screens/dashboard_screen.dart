@@ -45,35 +45,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _unreadMessagesSubscription?.cancel();
     _unreadNotificationsSubscription?.cancel();
 
-    // --- THIS IS THE FIX ---
-    // This query is now valid as it only uses one 'array-contains' filter.
-    // It directly checks if there are any message threads marked as unread for the current user.
-    final messageQuery = FirebaseFirestore.instance
-        .collection('messages')
-        .where('usersWithUnread', arrayContains: userId)
-        .limit(1);
-
-    _unreadMessagesSubscription = messageQuery.snapshots().listen((snapshot) {
+    _unreadMessagesSubscription = FirebaseFirestore.instance
+        .collection('chats')
+        .where('participants', arrayContains: userId)
+        .where('isRead.$userId', isEqualTo: false)
+        .snapshots()
+        .listen((snapshot) {
       if (mounted) {
-        setState(() => _hasUnreadMessages = snapshot.docs.isNotEmpty);
+        setState(() {
+          _hasUnreadMessages = snapshot.docs.isNotEmpty;
+        });
       }
-    }, onError: (error) {
-      debugPrint("Error listening for unread messages: $error");
     });
 
-    final notificationQuery = FirebaseFirestore.instance
+    _unreadNotificationsSubscription = FirebaseFirestore.instance
         .collection('users')
         .doc(userId)
         .collection('notifications')
-        .where('read', isEqualTo: false);
-
-    _unreadNotificationsSubscription =
-        notificationQuery.snapshots().listen((snapshot) {
+        .where('isRead', isEqualTo: false)
+        .snapshots()
+        .listen((snapshot) {
       if (mounted) {
-        setState(() => _unreadNotificationCount = snapshot.docs.length);
+        setState(() {
+          _unreadNotificationCount = snapshot.docs.length;
+        });
       }
-    }, onError: (error) {
-      debugPrint("Error in notification snapshot listener: $error");
     });
   }
 
@@ -84,40 +80,80 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.dispose();
   }
 
-  Widget buildButton(
-      {required IconData icon,
-      required String label,
-      required VoidCallback onPressed,
-      bool showRedDot = false}) {
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      width: double.infinity,
-      child: ElevatedButton.icon(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.deepPurple,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+  Widget buildButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+    bool hasBadge = false,
+    int badgeCount = 0,
+  }) {
+    return Expanded(
+      child: Card(
+        elevation: 2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 8),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Align(
+                  alignment: Alignment.center,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(icon, size: 40, color: Colors.indigo),
+                      const SizedBox(height: 12),
+                      Text(
+                        label,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                ),
+                if (hasBadge)
+                  Positioned(
+                    top: -10,
+                    right: 10,
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
+                      constraints:
+                          const BoxConstraints(minWidth: 22, minHeight: 22),
+                      child: Text(
+                        '$badgeCount',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                if (!hasBadge && _hasUnreadMessages && label == 'Messages')
+                  Positioned(
+                    top: -4,
+                    right: 20,
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: const BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ),
-        icon: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Icon(icon, size: 22),
-            if (showRedDot)
-              Positioned(
-                right: -2,
-                top: -2,
-                child: Container(
-                    width: 10,
-                    height: 10,
-                    decoration: const BoxDecoration(
-                        color: Colors.red, shape: BoxShape.circle)),
-              ),
-          ],
-        ),
-        label: Text(label, style: const TextStyle(fontSize: 16)),
-        onPressed: onPressed,
       ),
     );
   }
@@ -127,99 +163,125 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final user = Provider.of<UserModel?>(context);
 
     if (user == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
     }
 
     return Scaffold(
       appBar: AppHeaderWithMenu(appId: widget.appId),
       body: SingleChildScrollView(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.all(16.0),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Padding(
-                padding: EdgeInsets.only(top: 24.0),
-                child: Center(
-                    child: Text('Dashboard',
-                        style: TextStyle(
-                            fontSize: 20, fontWeight: FontWeight.bold))),
-              ),
-              const SizedBox(height: 32),
-              buildButton(
-                  icon: Icons.group,
-                  label: 'My Downline',
-                  onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) =>
-                              DownlineTeamScreen(appId: widget.appId)))),
-              buildButton(
-                  icon: Icons.trending_up_rounded,
-                  label: 'Grow My Team',
-                  onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => ShareScreen(appId: widget.appId)))),
-              buildButton(
-                  icon: Icons.message,
-                  label: 'Message Center',
-                  showRedDot: _hasUnreadMessages,
-                  onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (context) =>
-                              MessageCenterScreen(appId: widget.appId)))),
-              buildButton(
-                  icon: Icons.notifications,
-                  label: 'Notifications',
-                  showRedDot: _unreadNotificationCount > 0,
-                  onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (context) =>
-                              NotificationsScreen(appId: widget.appId)))),
-              buildButton(
-                  icon: Icons.person,
-                  label: 'My Profile',
-                  onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => ProfileScreen(appId: widget.appId)))),
-              if (user.role == 'admin')
-                buildButton(
-                    icon: Icons.settings,
-                    label: 'Opportunity Settings',
+              Text('Welcome, ${user.firstName}!',
+                  style: Theme.of(context).textTheme.headlineSmall),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  buildButton(
+                    icon: Icons.person_search,
+                    label: 'My Downline',
                     onPressed: () => Navigator.push(
                         context,
                         MaterialPageRoute(
                             builder: (_) =>
-                                SettingsScreen(appId: widget.appId)))),
-              if (user.role == 'user' &&
-                  (user.directSponsorCount) >=
-                      AppConstants.projectWideDirectSponsorMin &&
-                  (user.totalTeamCount) >= AppConstants.projectWideTotalTeamMin)
-                buildButton(
-                  icon: Icons.monetization_on,
-                  label: user.bizOppRefUrl != null
-                      ? 'My Opportunity'
-                      : 'Join Opportunity',
-                  onPressed: () {
-                    if (user.bizOppRefUrl != null) {
-                      Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) =>
-                                  MyBizScreen(appId: widget.appId)));
-                    } else {
-                      Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) =>
-                                  JoinOpportunityScreen(appId: widget.appId)));
-                    }
-                  },
-                ),
+                                DownlineTeamScreen(appId: widget.appId))),
+                  ),
+                  const SizedBox(width: 16),
+                  buildButton(
+                    icon: Icons.share,
+                    label: 'Grow My Team',
+                    onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => ShareScreen(appId: widget.appId))),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  buildButton(
+                    icon: Icons.message,
+                    label: 'Messages',
+                    hasBadge: _hasUnreadMessages,
+                    onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) =>
+                                MessageCenterScreen(appId: widget.appId))),
+                  ),
+                  const SizedBox(width: 16),
+                  buildButton(
+                    icon: Icons.notifications,
+                    label: 'Notifications',
+                    hasBadge: _unreadNotificationCount > 0,
+                    badgeCount: _unreadNotificationCount,
+                    onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) =>
+                                NotificationsScreen(appId: widget.appId))),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  buildButton(
+                    icon: Icons.person,
+                    label: 'My Profile',
+                    onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) =>
+                                ProfileScreen(appId: widget.appId))),
+                  ),
+                  const SizedBox(width: 16),
+                  if (user.role == 'admin')
+                    buildButton(
+                      icon: Icons.settings,
+                      label: 'Opportunity Settings',
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          // MODIFIED: Added missing 'appId' parameter
+                          builder: (_) => SettingsScreen(appId: widget.appId),
+                        ),
+                      ),
+                    ),
+                  if (user.role == 'user')
+                    (user.directSponsorCount >=
+                                AppConstants.projectWideDirectSponsorMin &&
+                            user.totalTeamCount >=
+                                AppConstants.projectWideTotalTeamMin)
+                        ? buildButton(
+                            icon: Icons.monetization_on,
+                            label: user.bizOppRefUrl != null
+                                ? 'My Opportunity'
+                                : 'Join Opportunity',
+                            onPressed: () {
+                              if (user.bizOppRefUrl != null) {
+                                Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (_) =>
+                                            MyBizScreen(appId: widget.appId)));
+                              } else {
+                                Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (_) => JoinOpportunityScreen(
+                                            appId: widget.appId)));
+                              }
+                            },
+                          )
+                        : Expanded(child: Container()), // Empty placeholder
+                ],
+              ),
             ],
           ),
         ),

@@ -1,25 +1,32 @@
-class MessageModel {
+// lib/models/message_model.dart
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+class Message {
   final String senderId;
-  final String content;
+  final String text;
   final DateTime timestamp;
 
-  MessageModel({
+  Message({
     required this.senderId,
-    required this.content,
+    required this.text,
     required this.timestamp,
   });
 
-  factory MessageModel.fromJson(Map<String, dynamic> json) {
-    return MessageModel(
-      senderId: json['senderId'] ?? '',
-      content: json['content'] ?? '',
-      timestamp: DateTime.parse(json['timestamp']),
+  factory Message.fromFirestore(DocumentSnapshot doc) {
+    Map data = doc.data() as Map<String, dynamic>;
+    return Message(
+      senderId: data['senderId'] ?? '',
+      text: data['text'] ?? '',
+      timestamp: (data['timestamp'] as Timestamp).toDate(),
     );
   }
 
-  Map<String, dynamic> toJson() => {
-        'senderId': senderId,
-        'content': content,
-        'timestamp': timestamp.toIso8601String(),
-      };
+  Map<String, dynamic> toMap() {
+    return {
+      'senderId': senderId,
+      'text': text,
+      'timestamp': Timestamp.fromDate(timestamp),
+    };
+  }
 }

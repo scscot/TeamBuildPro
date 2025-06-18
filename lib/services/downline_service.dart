@@ -1,34 +1,48 @@
-import 'package:flutter/foundation.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:flutter/foundation.dart'; // Import for debugPrint
 import '../models/user_model.dart';
 
 class DownlineService {
-  final HttpsCallable _getDownlineCallable =
-      FirebaseFunctions.instance.httpsCallable('getDownline');
-  final HttpsCallable _getDownlineCountsCallable =
-      FirebaseFunctions.instance.httpsCallable('getDownlineCounts');
+  final FirebaseFunctions _functions = FirebaseFunctions.instance;
 
-  Future<List<UserModel>> getDownline(String userId) async {
+  Future<List<UserModel>> getDownline() async {
     try {
-      // The Cloud Function uses the authenticated user's context to get the UID,
-      // so we don't need to pass a parameter here.
-      final result = await _getDownlineCallable.call();
-      final List<dynamic> usersData = result.data['downline'];
-      return usersData.map((data) => UserModel.fromMap(data)).toList();
+      final callable = _functions.httpsCallable('getDownline');
+      final result = await callable.call();
+      final List<dynamic> downlineData = result.data['downline'];
+      return downlineData
+          .map((data) => UserModel.fromMap(data as Map<String, dynamic>))
+          .toList();
+    } on FirebaseFunctionsException catch (e) {
+      // MODIFIED: Replaced print with debugPrint
+      debugPrint(
+          'Error calling getDownline function: ${e.code} - ${e.message}');
+      rethrow;
     } catch (e) {
-      debugPrint('Error getting downline: $e');
-      return [];
+      // MODIFIED: Replaced print with debugPrint
+      debugPrint(
+          'An unexpected error occurred in DownlineService.getDownline: $e');
+      rethrow;
     }
   }
 
-  Future<Map<String, int>> getDownlineCounts(String userId) async {
+  Future<Map<String, int>> getDownlineCounts() async {
     try {
-      // The Cloud Function uses the authenticated user's context to get the UID.
-      final result = await _getDownlineCountsCallable.call();
-      return Map<String, int>.from(result.data['counts']);
+      final callable = _functions.httpsCallable('getDownlineCounts');
+      final result = await callable.call();
+      final Map<String, dynamic> countsData = result.data['counts'];
+      return countsData
+          .map((key, value) => MapEntry(key, (value as num).toInt()));
+    } on FirebaseFunctionsException catch (e) {
+      // MODIFIED: Replaced print with debugPrint
+      debugPrint(
+          'Error calling getDownlineCounts function: ${e.code} - ${e.message}');
+      rethrow;
     } catch (e) {
-      debugPrint('Error getting downline counts: $e');
-      return {};
+      // MODIFIED: Replaced print with debugPrint
+      debugPrint(
+          'An unexpected error occurred in DownlineService.getDownlineCounts: $e');
+      rethrow;
     }
   }
 }

@@ -1,6 +1,3 @@
-// lib/widgets/header_widgets.dart
-// ignore_for_file: use_build_context_synchronously
-
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
@@ -14,6 +11,7 @@ import '../screens/message_center_screen.dart';
 import '../screens/notifications_screen.dart';
 import '../screens/join_opportunity_screen.dart';
 import '../screens/settings_screen.dart';
+import '../screens/login_screen.dart';
 
 class AppHeaderWithMenu extends StatelessWidget implements PreferredSizeWidget {
   final String appId;
@@ -38,51 +36,35 @@ class AppHeaderWithMenu extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
-    final user = Provider.of<UserModel?>(context, listen: false);
+    final user = Provider.of<UserModel?>(context);
 
     return AppBar(
-      backgroundColor: const Color(0xFFEDE7F6),
       automaticallyImplyLeading: false,
       leading: _shouldShowBackButton(context)
-          ? IconButton(
-              icon: const Icon(Icons.arrow_back, color: Colors.black),
-              onPressed: () => Navigator.pop(context))
-          : null,
+          ? const BackButton()
+          : const SizedBox(),
       title: GestureDetector(
-        onTap: () {
-          final currentRoute = ModalRoute.of(context);
-          if (currentRoute != null && !currentRoute.isFirst) {
-            Navigator.of(context).pushAndRemoveUntil(
-              MaterialPageRoute(
-                  builder: (_) => DashboardScreen(appId: appId),
-                  settings: const RouteSettings(name: '/')),
-              (route) => false,
-            );
-          }
-        },
-        child: const Text('TeamBuild Pro',
-            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black)),
+        onTap: () => Navigator.pushReplacement(context,
+            MaterialPageRoute(builder: (_) => DashboardScreen(appId: appId))),
+        child: const Text('TeamBuild Pro', style: TextStyle(fontSize: 18)),
       ),
       centerTitle: true,
       actions: [
-        if (user != null) // Only show the menu if a user is logged in
+        if (user != null)
           PopupMenuButton<String>(
-            icon: const Icon(Icons.menu, color: Colors.black),
-            onSelected: (String value) async {
-              if (value == 'logout') {
-                // --- THIS IS THE FIX ---
-                // First, pop all pages off the stack until we are at the root.
-                Navigator.of(context).popUntil((route) => route.isFirst);
-                // Then, sign out. The StreamProvider will now correctly show the LoginScreen.
-                await FirebaseAuth.instance.signOut();
-                return;
-              }
-
+            onSelected: (value) async {
               final navigator = Navigator.of(context);
               switch (value) {
-                case 'dashboard':
+                case 'logout':
+                  await FirebaseAuth.instance.signOut();
+                  navigator.pushAndRemoveUntil(
+                      MaterialPageRoute(
+                          builder: (_) => LoginScreen(appId: appId)),
+                      (route) => false);
+                  break;
+                case 'join':
                   navigator.push(MaterialPageRoute(
-                      builder: (_) => DashboardScreen(appId: appId)));
+                      builder: (_) => JoinOpportunityScreen(appId: appId)));
                   break;
                 case 'downline':
                   navigator.push(MaterialPageRoute(
@@ -91,10 +73,6 @@ class AppHeaderWithMenu extends StatelessWidget implements PreferredSizeWidget {
                 case 'share':
                   navigator.push(MaterialPageRoute(
                       builder: (_) => ShareScreen(appId: appId)));
-                  break;
-                case 'join':
-                  navigator.push(MaterialPageRoute(
-                      builder: (_) => JoinOpportunityScreen(appId: appId)));
                   break;
                 case 'messages':
                   navigator.push(MaterialPageRoute(

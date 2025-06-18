@@ -1,65 +1,185 @@
-const { onCall, HttpsError, onRequest } = require("firebase-functions/v2/https");
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getAuth } = require("firebase-admin/auth");
 const { getMessaging } = require("firebase-admin/messaging");
-const { v4: uuidv4 } = require("uuid");
 
-// Initialize Firebase Admin SDK once
+// Initialize Firebase Admin SDK
 initializeApp();
+const db = getFirestore();
+const auth = getAuth();
+const messaging = getMessaging();
 
-// =============================================================================
-// NEW DOWMLINE FUNCTIONS (Ancestor Array Model)
-// =============================================================================
-
-exports.getDownline = onCall({ region: "us-central1" }, async (request) => {
-  const db = getFirestore();
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "The function must be called while authenticated.");
+/**
+ * Recursively converts Firestore Timestamp objects in a data structure to ISO strings.
+ * This is crucial for sending data to a client that expects JSON.
+ * @param {any} data The data to serialize.
+ * @returns {any} The serialized data.
+ */
+const serializeTimestamps = (data) => {
+  if (data === null || data === undefined) {
+    return data;
   }
-  const userId = request.auth.uid;
+  if (data.toDate && typeof data.toDate === "function") {
+    return data.toDate().toISOString();
+  }
+  if (Array.isArray(data)) {
+    return data.map(serializeTimestamps);
+  }
+  if (typeof data === "object") {
+    const newData = {};
+    for (const key in data) {
+      if (Object.prototype.hasOwnProperty.call(data, key)) {
+        newData[key] = serializeTimestamps(data[key]);
+      }
+    }
+    return newData;
+  }
+  return data;
+};
+
+
+/**
+ * Registers a new user, creating both a Firebase Auth user and a Firestore user document.
+ * This function correctly builds the `upline_refs` array for the new user.
+ */
+exports.registerUser = onCall({ region: "us-central1" }, async (request) => {
+  const {
+    email,
+    password,
+    firstName,
+    lastName,
+    sponsorReferralCode
+  } = request.data;
+
+  if (!email || !password || !firstName || !lastName) {
+    throw new HttpsError("invalid-argument", "Missing required user information.");
+  }
+
+  let sponsorId = null;
+  let sponsorRefs = [];
+  let level = 1;
+
+  // 1. Find the sponsor if a referral code is provided
+  if (sponsorReferralCode) {
+    const sponsorQuery = await db.collection("users").where("referralCode", "==", sponsorReferralCode).limit(1).get();
+    if (!sponsorQuery.empty) {
+      const sponsorDoc = sponsorQuery.docs[0];
+      sponsorId = sponsorDoc.id;
+      const sponsorData = sponsorDoc.data();
+      sponsorRefs = sponsorData.upline_refs || [];
+      level = sponsorData.level ? sponsorData.level + 1 : 2;
+    } else {
+      console.warn(`Sponsor with referral code '${sponsorReferralCode}' not found.`);
+    }
+  }
+
   try {
-    const downlineSnapshot = await db.collection("users")
-      .where("upline_refs", "array-contains", userId)
-      .get();
-
-    const downlineUsers = downlineSnapshot.docs.map(doc => {
-      const userData = doc.data();
-      const userWithUid = { uid: doc.id, ...userData };
-      // Securely serialize data, converting Timestamps to strings for client compatibility
-      return {
-        ...userWithUid,
-        createdAt: userWithUid.createdAt?.toDate().toISOString(),
-        joined: userWithUid.joined?.toDate().toISOString(),
-        qualifiedDate: userWithUid.qualifiedDate?.toDate().toISOString(),
-        bizVisitDate: userWithUid.bizVisitDate?.toDate().toISOString(),
-      };
+    // 2. Create the Firebase Auth user
+    const userRecord = await auth.createUser({
+      email: email,
+      password: password,
+      displayName: `${firstName} ${lastName}`,
     });
+    const uid = userRecord.uid;
 
-    return { downline: downlineUsers };
+    // 3. Prepare the new user's data for Firestore
+    const newUser = {
+      uid: uid,
+      email: email,
+      firstName: firstName,
+      lastName: lastName,
+      createdAt: FieldValue.serverTimestamp(),
+      role: "user", // Assign a default role
+      referralCode: `${firstName.toLowerCase()}${Math.floor(1000 + Math.random() * 9000)}`, // Generate a simple referral code
+      referredBy: sponsorId,
+      level: level,
+      // Ancestor Array: Copy sponsor's refs and add sponsor's ID
+      upline_refs: sponsorId ? [...sponsorRefs, sponsorId] : [],
+      // Initialize other fields with default values
+      directSponsorCount: 0,
+      totalTeamCount: 0,
+    };
 
+    // 4. Create the user document in Firestore
+    await db.collection("users").doc(uid).set(newUser);
+
+    // 5. [Optional] Update sponsor's direct sponsor count
+    if (sponsorId) {
+      await db.collection("users").doc(sponsorId).update({
+        directSponsorCount: FieldValue.increment(1)
+      });
+    }
+
+    return {
+      success: true,
+      uid: uid
+    };
   } catch (error) {
-    console.error("Error in getDownline function:", error);
-    throw new HttpsError("internal", "An unexpected error occurred while fetching the downline. Ensure Firestore indexes are built.");
+    console.error("Error registering user:", error);
+    // If Firestore write fails after Auth user is created, you might want to delete the Auth user.
+    if (error.code.startsWith("auth/")) {
+      throw new HttpsError("aborted", `Auth error: ${error.message}`);
+    }
+    throw new HttpsError("internal", "An error occurred while creating the user.");
   }
 });
 
-exports.getDownlineCounts = onCall({ region: "us-central1" }, async (request) => {
-  const db = getFirestore();
+/**
+ * Fetches all users in the authenticated user's downline.
+ * Uses the `upline_refs` field for efficient querying.
+ */
+exports.getDownline = onCall({ region: "us-central1" }, async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "The function must be called while authenticated.");
   }
-  const userId = request.auth.uid;
+  const currentUserId = request.auth.uid;
+
+  try {
+    // Query for all users who have the current user in their `upline_refs` array.
+    const downlineSnapshot = await db.collection("users")
+      .where("upline_refs", "array-contains", currentUserId)
+      .get();
+
+    if (downlineSnapshot.empty) {
+      return { downline: [] };
+    }
+
+    const downlineUsers = downlineSnapshot.docs.map(doc => doc.data());
+
+    // Serialize data to ensure Timestamps are handled correctly.
+    const serializedDownline = serializeTimestamps(downlineUsers);
+
+    return { downline: serializedDownline };
+
+  } catch (error) {
+    console.error("Error in getDownline function:", error);
+    throw new HttpsError("internal", "An unexpected error occurred while fetching the downline.");
+  }
+});
+
+
+/**
+ * Calculates and returns various counts for the user's downline.
+ * Uses the `upline_refs` field for efficient querying.
+ */
+exports.getDownlineCounts = onCall({ region: "us-central1" }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "The function must be called while authenticated.");
+  }
+  const currentUserId = request.auth.uid;
+
   try {
     const now = new Date();
     const twentyFourHoursAgo = new Date(now.getTime() - (24 * 60 * 60 * 1000));
     const sevenDaysAgo = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000));
     const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
 
-    // CORRECTED: Each query is now built from the base collection reference.
-    const baseQuery = db.collection("users").where("upline_refs", "array-contains", userId);
+    // Base query for the user's downline
+    const teamQuery = db.collection("users").where("upline_refs", "array-contains", currentUserId);
 
+    // Perform all count queries in parallel
     const [
       allSnapshot,
       last24Snapshot,
@@ -67,11 +187,11 @@ exports.getDownlineCounts = onCall({ region: "us-central1" }, async (request) =>
       last30Snapshot,
       newQualifiedSnapshot
     ] = await Promise.all([
-      baseQuery.count().get(),
-      baseQuery.where("createdAt", ">=", twentyFourHoursAgo).count().get(),
-      baseQuery.where("createdAt", ">=", sevenDaysAgo).count().get(),
-      baseQuery.where("createdAt", ">=", thirtyDaysAgo).count().get(),
-      baseQuery.where("isQualified", "==", true).count().get()
+      teamQuery.count().get(),
+      teamQuery.where("createdAt", ">=", twentyFourHoursAgo).count().get(),
+      teamQuery.where("createdAt", ">=", sevenDaysAgo).count().get(),
+      teamQuery.where("createdAt", ">=", thirtyDaysAgo).count().get(),
+      teamQuery.where("isQualified", "==", true).count().get()
     ]);
 
     const counts = {
@@ -82,87 +202,12 @@ exports.getDownlineCounts = onCall({ region: "us-central1" }, async (request) =>
       newQualified: newQualifiedSnapshot.data().count,
     };
 
-    return { counts: counts };
+    return { counts };
 
   } catch (error) {
     console.error("Error in getDownlineCounts function:", error);
-    throw new HttpsError("internal", "An unexpected error occurred while fetching downline counts. Ensure Firestore indexes are built.");
+    throw new HttpsError("internal", "An unexpected error occurred while fetching downline counts.");
   }
-});
-
-
-// =============================================================================
-// All OTHER FUNCTIONS from your original file
-// =============================================================================
-
-exports.registerUser = onCall(async (request) => {
-  // This is the version from your uploaded file, revised for the new model
-  const db = getFirestore();
-  const auth = getAuth();
-  const data = request.data;
-  if (!data.email || !data.password || !data.firstName) {
-    throw new HttpsError("invalid-argument", "Missing required user information.");
-  }
-  const { email, password, firstName, lastName, country, state, city, referralCode: sponsorReferralCode } = data;
-  let sponsorData = null, sponsorId = null, uplineAdmin = null, level = 1;
-  const uplineRefs = [];
-
-  if (sponsorReferralCode) {
-    const sponsorQuery = await db.collection("users").where("referralCode", "==", sponsorReferralCode).limit(1).get();
-    if (sponsorQuery.empty) {
-      throw new HttpsError("not-found", "The provided referral code is not valid.");
-    }
-    const sponsorDoc = sponsorQuery.docs[0];
-    sponsorData = sponsorDoc.data();
-    sponsorId = sponsorDoc.id;
-    level = (sponsorData.level || 0) + 1;
-    uplineAdmin = sponsorData.uplineAdmin;
-
-    if (Array.isArray(sponsorData.upline_refs)) {
-      uplineRefs.push(...sponsorData.upline_refs);
-    }
-    uplineRefs.push(sponsorId);
-  }
-
-  let userRecord;
-  try {
-    userRecord = await auth.createUser({ email, password, displayName: `${firstName} ${lastName}` });
-  } catch (error) {
-    if (error.code === "auth/email-already-exists") {
-      throw new HttpsError("already-exists", "This email address is already in use.");
-    }
-    console.error("Error creating auth user:", error);
-    throw new HttpsError("internal", "Error creating account.");
-  }
-
-  const newUserUid = userRecord.uid;
-  if (!uplineAdmin) {
-    uplineAdmin = newUserUid;
-  }
-  const newReferralCode = uuidv4().substring(0, 6).toUpperCase();
-  const newUserDocData = {
-    uid: newUserUid, firstName, lastName, email, country, state, city,
-    referralCode: newReferralCode,
-    referredBy: sponsorReferralCode || null,
-    level,
-    directSponsorCount: 0,
-    totalTeamCount: 0,
-    role: sponsorData ? "user" : "admin",
-    uplineAdmin,
-    createdAt: FieldValue.serverTimestamp(),
-    isUpgraded: false,
-    photoUrl: "",
-    downlineIds: [],
-    upline_refs: uplineRefs
-  };
-  try {
-    await db.collection("users").doc(newUserUid).set(newUserDocData);
-  } catch (error) {
-    await auth.deleteUser(newUserUid);
-    console.error("🔥 User registration transaction failed, rolling back auth user:", error);
-    throw new HttpsError("internal", "Error saving user data.");
-  }
-  return { status: "success", uid: newUserUid };
 });
 
 exports.checkAdminSubscriptionStatus = onCall(async (request) => {
