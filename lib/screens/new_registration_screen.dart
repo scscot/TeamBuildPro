@@ -23,13 +23,12 @@ class NewRegistrationScreen extends StatefulWidget {
 
 class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
   final _formKey = GlobalKey<FormState>();
-  final TextEditingController _firstNameController = TextEditingController();
-  final TextEditingController _lastNameController = TextEditingController();
-  final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
-  final TextEditingController _confirmPasswordController =
-      TextEditingController();
-  final TextEditingController _cityController = TextEditingController();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
+  final _cityController = TextEditingController();
 
   String? _selectedCountry;
   String? _selectedState;
@@ -38,7 +37,7 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
   bool _isFirstUser = false;
   List<String> _availableCountries = [];
   bool _isLoading = false;
-  bool isDevMode = true;
+  bool isDevMode = false;
 
   List<String> get states => statesByCountry[_selectedCountry] ?? [];
 
@@ -50,13 +49,10 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
 
   Future<void> _initScreenData() async {
     setState(() => _isLoading = true);
-
     _initialReferralCode = widget.referralCode;
-
     if (isDevMode && _initialReferralCode == null) {
-      _initialReferralCode = 'DNK82TCW';
+      _initialReferralCode = '1F2BD4A5';
     }
-
     final code = _initialReferralCode;
 
     if (code == null || code.isEmpty) {
@@ -67,7 +63,6 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
       });
       return;
     }
-
     try {
       final uri = Uri.parse(
           'https://us-central1-teambuilder-plus-fe74d.cloudfunctions.net/getUserByReferralCode?code=$code');
@@ -84,7 +79,6 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
               .collection('admin_settings')
               .doc(uplineAdminUid)
               .get();
-
           if (mounted &&
               docSnapshot.exists &&
               docSnapshot.data()?['countries'] is List) {
@@ -124,8 +118,10 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
   }
 
   Future<void> _register() async {
+    if (_isLoading) return;
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
+
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
     try {
@@ -141,18 +137,18 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
         'city': _cityController.text.trim(),
         'referralCode': _initialReferralCode,
       });
+
+      await Future.delayed(const Duration(seconds: 1));
       await AuthService().login(email, password);
 
-      // MODIFIED: On success, pop all screens until we get back to the root,
-      // which will be the new home screen provided by the AuthWrapper.
       if (mounted) {
         Navigator.of(context).popUntil((route) => route.isFirst);
       }
     } on FirebaseFunctionsException catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(e.message ?? 'An unknown error occurred.')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Error: ${e.message}')));
       }
     } catch (e) {
       if (mounted) {
@@ -161,8 +157,6 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
             SnackBar(content: Text('An unexpected error occurred: $e')));
       }
     }
-    // REMOVED: Finally block is no longer needed as state is handled
-    // in the success (pop) or failure (catch) cases.
   }
 
   @override
@@ -174,6 +168,7 @@ class _NewRegistrationScreenState extends State<NewRegistrationScreen> {
         child: Form(
           key: _formKey,
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               if (_sponsorName != null)
                 Padding(

@@ -1,20 +1,12 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_model.dart';
+import '../services/downline_service.dart';
 import '../screens/member_detail_screen.dart';
 import '../widgets/header_widgets.dart';
-import '../config/app_constants.dart';
 
-enum JoinWindow {
-  none,
-  all,
-  last24,
-  last7,
-  last30,
-  newQualified,
-}
+enum JoinWindow { none, all, last24, last7, last30, newQualified }
 
 class DownlineTeamScreen extends StatefulWidget {
   final String? initialAuthToken;
@@ -38,62 +30,63 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
   String _searchQuery = '';
   int levelOffset = 0;
   List<UserModel> _fullDownlineUsers = [];
-  Map<JoinWindow, int> downlineCounts = {
-    JoinWindow.all: 0,
-    JoinWindow.last24: 0,
-    JoinWindow.last7: 0,
-    JoinWindow.last30: 0,
-    JoinWindow.newQualified: 0,
-  };
+  Map<String, int> downlineCounts = {};
   String? uplineBizOpp;
-  StreamSubscription? _currentUserDocSubscription;
   UserModel? _currentUserModel;
+
+  final DownlineService _downlineService = DownlineService();
 
   @override
   void initState() {
     super.initState();
-    _fetchAndListenToCurrentUser();
+    _fetchData();
+    _searchController.addListener(_onSearchChanged);
   }
 
   @override
   void dispose() {
+    _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
-    _currentUserDocSubscription?.cancel();
     super.dispose();
   }
 
-  Future<void> _fetchAndListenToCurrentUser() async {
-    final authUser = FirebaseAuth.instance.currentUser;
-    if (authUser == null) {
-      debugPrint('No authenticated user found for downline screen.');
-      if (mounted) {
-        setState(() => isLoading = false);
-      }
+  Future<void> _fetchData() async {
+    setState(() => isLoading = true);
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      if (mounted) setState(() => isLoading = false);
       return;
     }
 
-    _currentUserDocSubscription = FirebaseFirestore.instance
-        .collection('users')
-        .doc(authUser.uid)
-        .snapshots()
-        .listen((docSnapshot) {
-      if (docSnapshot.exists) {
-        if (!mounted) return;
-        setState(() {
-          _currentUserModel = UserModel.fromFirestore(docSnapshot);
-        });
-        fetchDownline();
-      } else {
-        if (mounted) {
-          setState(() => isLoading = false);
-        }
-      }
-    }, onError: (error) {
-      debugPrint('Error listening to current user doc: $error');
+    try {
+      final results = await Future.wait([
+        _downlineService.getDownline(uid),
+        _downlineService.getDownlineCounts(uid),
+      ]);
+
+      final allUsers = results[0] as List<UserModel>;
+      final counts = results[1] as Map<String, int>;
+
       if (mounted) {
+        try {
+          _currentUserModel = allUsers.firstWhere((user) => user.uid == uid);
+          // CORRECTED (Line 78): Provide a default value for the nullable 'level'.
+          levelOffset = _currentUserModel?.level ?? 1;
+        } catch (e) {
+          debugPrint(
+              "Could not find current user in downline, defaulting level offset.");
+          levelOffset = 1;
+        }
+
+        _fullDownlineUsers = allUsers.where((user) => user.uid != uid).toList();
+        downlineCounts = counts;
+        _processDownlineData();
         setState(() => isLoading = false);
       }
-    });
+    } catch (e) {
+      debugPrint("Error fetching downline data: $e");
+      if (mounted) setState(() => isLoading = false);
+    }
   }
 
   bool userMatchesSearch(UserModel user) {
@@ -102,131 +95,73 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
         .any((field) => field != null && field.toLowerCase().contains(query));
   }
 
-  Future<void> fetchDownline() async {
-    if (!mounted) return;
-    setState(() => isLoading = true);
-
-    if (_currentUserModel == null) {
-      if (mounted) {
-        setState(() => isLoading = false);
-      }
-      return;
-    }
-
-    // FIX #1: Check if downlineIds is null before using it.
-    final currentUsersDownlineIds = _currentUserModel!.downlineIds;
-    if (currentUsersDownlineIds!.isEmpty) {
-      if (mounted) {
-        setState(() {
-          _fullDownlineUsers = [];
-          downlineByLevel = {};
-          downlineCounts.updateAll((_, __) => 0);
-          isLoading = false;
-        });
-      }
-      return;
-    }
-
-    try {
-      List<UserModel> fetchedDownlineUsers = [];
-      const int batchSize = 10;
-      // The null and empty checks above guarantee the list is safe to use here.
-      for (int i = 0; i < currentUsersDownlineIds.length; i += batchSize) {
-        final batchUids = currentUsersDownlineIds.sublist(
-          i,
-          i + batchSize > currentUsersDownlineIds.length
-              ? currentUsersDownlineIds.length
-              : i + batchSize,
-        );
-
-        final batchSnapshot = await FirebaseFirestore.instance
-            .collection('users')
-            .where(FieldPath.documentId, whereIn: batchUids)
-            .get();
-
-        fetchedDownlineUsers.addAll(batchSnapshot.docs
-            .map((doc) => UserModel.fromFirestore(doc))
-            .toList());
-      }
-      if (!mounted) return;
-
-      _fullDownlineUsers = fetchedDownlineUsers;
-      _processDownlineData();
-    } catch (e) {
-      debugPrint('Error loading downline: $e');
-    } finally {
-      if (mounted) {
-        setState(() => isLoading = false);
-      }
+  void _onSearchChanged() {
+    if (_searchQuery != _searchController.text) {
+      setState(() {
+        _searchQuery = _searchController.text;
+        _processDownlineData();
+      });
     }
   }
 
+  void _onJoinWindowSelected(JoinWindow window) {
+    if (!mounted) return;
+    setState(() {
+      selectedJoinWindow = window;
+    });
+    _processDownlineData();
+  }
+
   void _processDownlineData() {
-    if (_currentUserModel == null) return;
+    List<UserModel> filteredUsers = _fullDownlineUsers;
 
-    // FIX #2: Provide a default value of 0 if level is null.
-    levelOffset = _currentUserModel!.level!;
-    final now = DateTime.now();
-
-    downlineCounts.updateAll((_, __) => 0);
-    final Map<int, List<UserModel>> grouped = {};
-
-    for (var user in _fullDownlineUsers) {
-      if (user.level != null && user.level! > levelOffset) {
-        final joined = user.joined;
-        final qualified = user.qualifiedDate;
-
-        if (joined != null) {
-          if (joined.isAfter(now.subtract(const Duration(days: 1)))) {
-            downlineCounts[JoinWindow.last24] =
-                (downlineCounts[JoinWindow.last24] ?? 0) + 1;
-          }
-          if (joined.isAfter(now.subtract(const Duration(days: 7)))) {
-            downlineCounts[JoinWindow.last7] =
-                (downlineCounts[JoinWindow.last7] ?? 0) + 1;
-          }
-          if (joined.isAfter(now.subtract(const Duration(days: 30)))) {
-            downlineCounts[JoinWindow.last30] =
-                (downlineCounts[JoinWindow.last30] ?? 0) + 1;
-          }
-        }
-        if (qualified != null) {
-          downlineCounts[JoinWindow.newQualified] =
-              (downlineCounts[JoinWindow.newQualified] ?? 0) + 1;
-        }
-        downlineCounts[JoinWindow.all] =
-            (downlineCounts[JoinWindow.all] ?? 0) + 1;
-
-        final include = selectedJoinWindow == JoinWindow.none ||
-            selectedJoinWindow == JoinWindow.all ||
-            (selectedJoinWindow == JoinWindow.last24 &&
-                joined != null &&
-                joined.isAfter(now.subtract(const Duration(days: 1)))) ||
-            (selectedJoinWindow == JoinWindow.last7 &&
-                joined != null &&
-                joined.isAfter(now.subtract(const Duration(days: 7)))) ||
-            (selectedJoinWindow == JoinWindow.last30 &&
-                joined != null &&
-                joined.isAfter(now.subtract(const Duration(days: 30)))) ||
-            (selectedJoinWindow == JoinWindow.newQualified &&
-                qualified != null);
-
-        if (include && (_searchQuery.isEmpty || userMatchesSearch(user))) {
-          final displayLevel = user.level! - levelOffset;
-          grouped.putIfAbsent(displayLevel, () => []).add(user);
-        }
+    if (selectedJoinWindow != JoinWindow.all &&
+        selectedJoinWindow != JoinWindow.none) {
+      final now = DateTime.now();
+      DateTime? windowStart;
+      switch (selectedJoinWindow) {
+        case JoinWindow.last24:
+          windowStart = now.subtract(const Duration(hours: 24));
+          break;
+        case JoinWindow.last7:
+          windowStart = now.subtract(const Duration(days: 7));
+          break;
+        case JoinWindow.last30:
+          windowStart = now.subtract(const Duration(days: 30));
+          break;
+        default:
+          break;
+      }
+      if (windowStart != null) {
+        filteredUsers = filteredUsers.where((user) {
+          return user.createdAt != null &&
+              user.createdAt!.isAfter(windowStart!);
+        }).toList();
       }
     }
 
-    grouped.forEach((level, users) {
-      users
-          .sort((a, b) => b.joined?.compareTo(a.joined ?? DateTime(1970)) ?? 0);
+    if (_searchQuery.isNotEmpty) {
+      filteredUsers = filteredUsers.where(userMatchesSearch).toList();
+    }
+
+    final newDownlineByLevel = <int, List<UserModel>>{};
+    for (var user in filteredUsers) {
+      // CORRECTED (Line 164): Provide a default value for the nullable 'level'.
+      final int userLevel = user.level;
+      (newDownlineByLevel[userLevel] ??= []).add(user);
+    }
+
+    newDownlineByLevel.forEach((level, users) {
+      users.sort((a, b) => (b.createdAt ?? DateTime(1970))
+          .compareTo(a.createdAt ?? DateTime(1970)));
     });
 
     if (mounted) {
       setState(() {
         downlineByLevel = Map.fromEntries(
-            grouped.entries.toList()..sort((a, b) => a.key.compareTo(b.key)));
+          newDownlineByLevel.entries.toList()
+            ..sort((a, b) => a.key.compareTo(b.key)),
+        );
       });
     }
   }
@@ -234,55 +169,27 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
   String _dropdownLabel(JoinWindow window) {
     switch (window) {
       case JoinWindow.last24:
-        return 'Joined Previous 24 Hours (${downlineCounts[JoinWindow.last24]})';
+        return 'Joined Previous 24 Hours (${downlineCounts["last24"] ?? 0})';
       case JoinWindow.last7:
-        return 'Joined Previous 7 Days (${downlineCounts[JoinWindow.last7]})';
+        return 'Joined Previous 7 Days (${downlineCounts["last7"] ?? 0})';
       case JoinWindow.last30:
-        return 'Joined Previous 30 Days (${downlineCounts[JoinWindow.last30]})';
+        return 'Joined Previous 30 Days (${downlineCounts["last30"] ?? 0})';
       case JoinWindow.newQualified:
-        return 'Qualified Team Members (${downlineCounts[JoinWindow.newQualified]})';
+        return 'Qualified Team Members (${downlineCounts["newQualified"] ?? 0})';
       case JoinWindow.all:
-        return 'All Team Members (${downlineCounts[JoinWindow.all]})';
+        return 'All Team Members (${downlineCounts["all"] ?? 0})';
       case JoinWindow.none:
         return 'Select Downline Report';
     }
   }
 
-  Future<List<Map<String, dynamic>>> fetchEligibleDownlineUsers() async {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return [];
-
-    final settingsDoc = await FirebaseFirestore.instance
-        .collection('admin_settings')
-        .doc(uid)
-        .get();
-    if (!settingsDoc.exists) return [];
-
-    final settings = settingsDoc.data();
-    final int directMin = AppConstants.projectWideDirectSponsorMin;
-    final int totalMin = AppConstants.projectWideTotalTeamMin;
-    final allowedCountries = List<String>.from(settings?['countries'] ?? []);
-
-    final querySnapshot = await FirebaseFirestore.instance
-        .collection('users')
-        .where('upline_admin', isEqualTo: uid)
-        .get();
-
-    return querySnapshot.docs
-        .map((doc) => doc.data())
-        .where((user) =>
-            (user['direct_sponsor_count'] ?? 0) >= directMin &&
-            (user['total_team_count'] ?? 0) >= totalMin &&
-            allowedCountries.contains(user['country']))
-        .toList();
-  }
-
   @override
   Widget build(BuildContext context) {
+    // CORRECTED (Line 295): Use the non-nullable 'levelOffset' variable.
+    final int relativeLevelOffset = levelOffset;
+
     return Scaffold(
-      appBar: AppHeaderWithMenu(
-        appId: widget.appId,
-      ),
+      appBar: AppHeaderWithMenu(appId: widget.appId),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : Column(
@@ -290,12 +197,9 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
                 const Padding(
                   padding: EdgeInsets.only(top: 24.0),
                   child: Center(
-                    child: Text(
-                      'Downline Team',
-                      style:
-                          TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                    ),
-                  ),
+                      child: Text('Downline Team',
+                          style: TextStyle(
+                              fontSize: 20, fontWeight: FontWeight.bold))),
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -311,22 +215,10 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
                       contentPadding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 12),
                     ),
-                    onChanged: (value) {
-                      if (value != null) {
-                        if (!mounted) return;
-                        setState(() {
-                          selectedJoinWindow = value;
-                          _searchQuery = '';
-                          _searchController.clear();
-                        });
-                        fetchDownline();
-                      }
-                    },
+                    onChanged: (value) => _onJoinWindowSelected(value!),
                     items: JoinWindow.values.map((window) {
                       return DropdownMenuItem(
-                        value: window,
-                        child: Text(_dropdownLabel(window)),
-                      );
+                          value: window, child: Text(_dropdownLabel(window)));
                     }).toList(),
                   ),
                 ),
@@ -340,16 +232,10 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
                         prefixIcon: Icon(Icons.search),
                         border: OutlineInputBorder(),
                       ),
-                      onSubmitted: (value) {
-                        if (!mounted) return;
-                        setState(() => _searchQuery = value);
-                        fetchDownline();
-                      },
+                      onChanged: (value) => _onSearchChanged(),
                     ),
                   ),
-                if (selectedJoinWindow == JoinWindow.newQualified &&
-                    uplineBizOpp != null &&
-                    uplineBizOpp!.isNotEmpty)
+                if (uplineBizOpp != null && uplineBizOpp!.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 16.0, vertical: 8),
@@ -366,9 +252,8 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
                           TextSpan(
                             text: uplineBizOpp!,
                             style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue,
-                            ),
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue),
                           ),
                           const TextSpan(
                               text:
@@ -376,56 +261,32 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
                           TextSpan(
                             text: uplineBizOpp!,
                             style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue,
-                            ),
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue),
                           ),
                           const TextSpan(text: ' registration.'),
                         ],
                       ),
                     ),
                   ),
-                if (!isLoading && selectedJoinWindow == JoinWindow.none)
-                  const Expanded(
-                    child: Center(
-                      child: Text(
-                        'Select a downline report from the dropdown menu to view.',
-                        style: TextStyle(fontSize: 16, color: Colors.grey),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  )
-                else if (!isLoading &&
-                    _fullDownlineUsers.isEmpty &&
+                if (!isLoading &&
+                    downlineByLevel.isEmpty &&
                     selectedJoinWindow != JoinWindow.none)
                   const Expanded(
                     child: Center(
                       child: Text(
-                        'No team members found for the selected filter.',
-                        style: TextStyle(fontSize: 16, color: Colors.grey),
-                        textAlign: TextAlign.center,
-                      ),
+                          'No team members found for the selected filter.',
+                          style: TextStyle(fontSize: 16, color: Colors.grey)),
                     ),
                   )
-                else if (!isLoading &&
-                    _searchQuery.isNotEmpty &&
-                    downlineByLevel.isEmpty)
-                  const Expanded(
-                    child: Center(
-                      child: Text(
-                        'No matching team members found for your search.',
-                        style: TextStyle(fontSize: 16, color: Colors.grey),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  )
-                else if (!isLoading)
+                else
                   Expanded(
                     child: ListView(
                       children: [
                         ...downlineByLevel.entries.map((entry) {
-                          final adjustedLevel = entry.key;
+                          final level = entry.key;
                           final users = entry.value;
+                          final displayLevel = level - relativeLevelOffset + 1;
                           int localIndex = 1;
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -435,12 +296,11 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 16.0, vertical: 10),
                                 child: Text(
-                                  'Level $adjustedLevel (${users.length})',
-                                  style: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.blue),
-                                ),
+                                    'Level $displayLevel (${users.length})',
+                                    style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.blue)),
                               ),
                               ...users.map((user) {
                                 final index = localIndex++;
@@ -458,11 +318,10 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
                                     children: [
                                       Row(
                                         children: [
-                                          Text(
-                                            '$index) ',
-                                            style: const TextStyle(
-                                                fontWeight: FontWeight.normal),
-                                          ),
+                                          Text('$index) ',
+                                              style: const TextStyle(
+                                                  fontWeight:
+                                                      FontWeight.normal)),
                                           GestureDetector(
                                             onTap: () {
                                               if (!mounted) return;
@@ -480,7 +339,7 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
                                               );
                                             },
                                             child: Text(
-                                              '${user.firstName ?? ''} ${user.lastName ?? ''}',
+                                              '${user.firstName} ${user.lastName}',
                                               style: const TextStyle(
                                                   color: Colors.blue,
                                                   decoration:
@@ -490,14 +349,14 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
                                         ],
                                       ),
                                       Text(
-                                        '${' ' * spaceCount}${user.city ?? ''}, ${user.state ?? ''} – ${user.country ?? ''}',
+                                        '${' ' * spaceCount}${user.city}, ${user.state} – ${user.country}',
                                         style: const TextStyle(
                                             fontWeight: FontWeight.normal),
                                       ),
                                     ],
                                   ),
                                 );
-                              })
+                              }),
                             ],
                           );
                         }),

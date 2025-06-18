@@ -131,7 +131,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             const SizedBox(height: 20),
             _buildInfoRow('Name', '${user.firstName} ${user.lastName}'),
-            _buildInfoRow('Email', user.email ?? 'N/A'),
+            _buildInfoRow('Email', user.email),
             _buildInfoRow('City', user.city ?? 'N/A'),
             _buildInfoRow('State/Province', user.state ?? 'N/A'),
             _buildInfoRow('Country', user.country ?? 'N/A'),

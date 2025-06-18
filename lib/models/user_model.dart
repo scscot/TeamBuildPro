@@ -1,8 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
-class UserModel {
+class UserModel with ChangeNotifier {
   final String uid;
-  final String? email;
+  final String email;
   final String? firstName;
   final String? lastName;
   final String? country;
@@ -11,22 +12,28 @@ class UserModel {
   final String? referralCode;
   final String? referredBy;
   final String? photoUrl;
-  final DateTime? joined;
-  final DateTime? createdAt;
-  final int? level;
-  final DateTime? qualifiedDate;
+  final String? bizOppRefUrl;
   final String? uplineAdmin;
-  final int directSponsorCount; // Changed to lowerCamelCase (Dart style)
-  final int totalTeamCount;     // Changed to lowerCamelCase (Dart style)
-  final List<String>? downlineIds;
-  final String? bizOppRefUrl; // <--- This property is camelCase in Dart
-  final String? bizOpp;
+  final DateTime? createdAt;
+  final DateTime? joined;
+  final int level;
+  final DateTime? qualifiedDate;
   final String? role;
+  final bool? isUpgraded;
+  final String? bizOpp;
   final DateTime? bizVisitDate;
+  final List<String> uplineRefs;
+
+  // These are kept for UI compatibility in other screens.
+  final int directSponsorCount;
+  final int totalTeamCount;
+  final List<String>? downlineIds;
+  final int? directSponsorMin;
+  final int? totalTeamMin;
 
   UserModel({
     required this.uid,
-    this.email,
+    required this.email,
     this.firstName,
     this.lastName,
     this.country,
@@ -35,26 +42,35 @@ class UserModel {
     this.referralCode,
     this.referredBy,
     this.photoUrl,
-    this.joined,
-    this.createdAt,
-    this.level,
-    this.qualifiedDate,
-    this.uplineAdmin,
-    this.directSponsorCount = 0, // Default to 0
-    this.totalTeamCount = 0,     // Default to 0
-    this.downlineIds,
     this.bizOppRefUrl,
-    this.bizOpp,
+    this.uplineAdmin,
+    this.createdAt,
+    this.joined,
+    required this.level,
+    this.qualifiedDate,
     this.role,
+    this.isUpgraded,
+    this.bizOpp,
     this.bizVisitDate,
+    required this.uplineRefs,
+    this.directSponsorCount = 0,
+    this.totalTeamCount = 0,
+    this.downlineIds,
+    this.directSponsorMin,
+    this.totalTeamMin,
   });
 
-  // Factory method to create a UserModel from a Firestore DocumentSnapshot
-  factory UserModel.fromFirestore(DocumentSnapshot doc) {
-    Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+  factory UserModel.fromMap(Map<String, dynamic> data) {
+    DateTime? parseDate(dynamic dateData) {
+      if (dateData == null) return null;
+      if (dateData is Timestamp) return dateData.toDate();
+      if (dateData is String) return DateTime.tryParse(dateData);
+      return null;
+    }
+
     return UserModel(
-      uid: doc.id,
-      email: data['email'],
+      uid: data['uid'] ?? '',
+      email: data['email'] ?? '',
       firstName: data['firstName'],
       lastName: data['lastName'],
       country: data['country'],
@@ -63,50 +79,90 @@ class UserModel {
       referralCode: data['referralCode'],
       referredBy: data['referredBy'],
       photoUrl: data['photoUrl'],
-      joined: (data['createdAt'] is Timestamp) ? (data['createdAt'] as Timestamp).toDate() : DateTime.tryParse(data['createdAt']?.toString() ?? ''),
-      createdAt: (data['createdAt'] is Timestamp) ? (data['createdAt'] as Timestamp).toDate() : DateTime.tryParse(data['createdAt']?.toString() ?? ''),
-      level: data['level'] is int ? data['level'] : (data['level'] as num?)?.toInt(),
-      qualifiedDate: (data['qualified_date'] is Timestamp) ? (data['qualified_date'] as Timestamp).toDate() : DateTime.tryParse(data['qualified_date']?.toString() ?? ''),
-      uplineAdmin: data['upline_admin'],
-      directSponsorCount: data['direct_sponsor_count'] is int ? data['direct_sponsor_count'] : (data['direct_sponsor_count'] as num?)?.toInt() ?? 0,
-      totalTeamCount: data['total_team_count'] is int ? data['total_team_count'] : (data['total_team_count'] as num?)?.toInt() ?? 0,
-      downlineIds: (data['downlineIds'] is List) ? List<String>.from(data['downlineIds']) : null,
-      bizOppRefUrl: data['biz_opp_ref_url'], // <--- CORRECTED: Access Firestore snake_case
-      bizOpp: data['biz_opp'],
+      bizOppRefUrl: data['bizOppRefUrl'],
+      uplineAdmin: data['uplineAdmin'],
+      createdAt: parseDate(data['createdAt']),
+      joined: parseDate(data['joined']),
+      level: data['level'] ?? 1,
+      qualifiedDate: parseDate(data['qualifiedDate']),
       role: data['role'],
-      bizVisitDate: (data['biz_visit_date'] is Timestamp) ? (data['biz_visit_date'] as Timestamp).toDate() : DateTime.tryParse(data['biz_visit_date']?.toString() ?? ''),
+      isUpgraded: data['isUpgraded'],
+      bizOpp: data['bizOpp'],
+      bizVisitDate: parseDate(data['bizVisitDate']),
+      uplineRefs: List<String>.from(data['upline_refs'] ?? []),
+      directSponsorCount: data['directSponsorCount'] ?? 0,
+      totalTeamCount: data['totalTeamCount'] ?? 0,
+      downlineIds: data['downlineIds'] != null
+          ? List<String>.from(data['downlineIds'])
+          : null,
+      directSponsorMin: data['directSponsorMin'],
+      totalTeamMin: data['totalTeamMin'],
     );
   }
 
-  // Factory method to create a UserModel from a Map (for SessionManager)
-  factory UserModel.fromMap(Map<String, dynamic> map) {
+  factory UserModel.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>? ?? {};
+    data['uid'] = doc.id;
+    return UserModel.fromMap(data);
+  }
+
+  UserModel copyWith(
+      {String? uid,
+      String? email,
+      String? firstName,
+      String? lastName,
+      String? country,
+      String? state,
+      String? city,
+      String? referralCode,
+      String? referredBy,
+      String? photoUrl,
+      String? bizOppRefUrl,
+      String? uplineAdmin,
+      DateTime? createdAt,
+      DateTime? joined,
+      int? level,
+      DateTime? qualifiedDate,
+      String? role,
+      bool? isUpgraded,
+      String? bizOpp,
+      DateTime? bizVisitDate,
+      List<String>? uplineRefs,
+      int? directSponsorCount,
+      int? totalTeamCount,
+      List<String>? downlineIds,
+      int? directSponsorMin,
+      int? totalTeamMin}) {
     return UserModel(
-      uid: map['uid'] as String,
-      email: map['email'] as String?,
-      firstName: map['firstName'] as String?,
-      lastName: map['lastName'] as String?,
-      country: map['country'] as String?,
-      state: map['state'] as String?,
-      city: map['city'] as String?,
-      referralCode: map['referralCode'] as String?,
-      referredBy: map['referredBy'] as String?,
-      photoUrl: map['photoUrl'] as String?,
-      joined: (map['joined'] is String) ? DateTime.tryParse(map['joined'] as String) : null,
-      createdAt: (map['createdAt'] is String) ? DateTime.tryParse(map['createdAt'] as String) : null,
-      level: map['level'] is int ? map['level'] : (map['level'] as num?)?.toInt(),
-      qualifiedDate: (map['qualified_date'] is String) ? DateTime.tryParse(map['qualified_date'] as String) : null,
-      uplineAdmin: map['upline_admin'] as String?,
-      directSponsorCount: map['direct_sponsor_count'] is int ? map['direct_sponsor_count'] : (map['direct_sponsor_count'] as num?)?.toInt() ?? 0,
-      totalTeamCount: map['total_team_count'] is int ? map['total_team_count'] : (map['total_team_count'] as num?)?.toInt() ?? 0,
-      downlineIds: (map['downlineIds'] is List) ? List<String>.from(map['downlineIds']) : null,
-      bizOppRefUrl: map['biz_opp_ref_url'] as String?, // <--- CORRECTED: Access Map snake_case
-      bizOpp: map['biz_opp'] as String?,
-      role: map['role'] as String?,
-      bizVisitDate: (map['biz_visit_date'] is String) ? DateTime.tryParse(map['biz_visit_date'] as String) : null,
+      uid: uid ?? this.uid,
+      email: email ?? this.email,
+      firstName: firstName ?? this.firstName,
+      lastName: lastName ?? this.lastName,
+      country: country ?? this.country,
+      state: state ?? this.state,
+      city: city ?? this.city,
+      referralCode: referralCode ?? this.referralCode,
+      referredBy: referredBy ?? this.referredBy,
+      photoUrl: photoUrl ?? this.photoUrl,
+      bizOppRefUrl: bizOppRefUrl ?? this.bizOppRefUrl,
+      uplineAdmin: uplineAdmin ?? this.uplineAdmin,
+      createdAt: createdAt ?? this.createdAt,
+      joined: joined ?? this.joined,
+      level: level ?? this.level,
+      qualifiedDate: qualifiedDate ?? this.qualifiedDate,
+      role: role ?? this.role,
+      isUpgraded: isUpgraded ?? this.isUpgraded,
+      bizOpp: bizOpp ?? this.bizOpp,
+      bizVisitDate: bizVisitDate ?? this.bizVisitDate,
+      uplineRefs: uplineRefs ?? this.uplineRefs,
+      directSponsorCount: directSponsorCount ?? this.directSponsorCount,
+      totalTeamCount: totalTeamCount ?? this.totalTeamCount,
+      downlineIds: downlineIds ?? this.downlineIds,
+      directSponsorMin: directSponsorMin ?? this.directSponsorMin,
+      totalTeamMin: totalTeamMin ?? this.totalTeamMin,
     );
   }
 
-  // Method to convert UserModel to a Map (for Firestore writes or session storage)
   Map<String, dynamic> toMap() {
     return {
       'uid': uid,
@@ -119,70 +175,22 @@ class UserModel {
       'referralCode': referralCode,
       'referredBy': referredBy,
       'photoUrl': photoUrl,
-      'joined': joined?.toIso8601String(), // Convert DateTime to String for Firestore
-      'createdAt': createdAt?.toIso8601String(), // Convert DateTime to String for Firestore
+      'bizOppRefUrl': bizOppRefUrl,
+      'uplineAdmin': uplineAdmin,
+      'createdAt': createdAt,
+      'joined': joined,
       'level': level,
-      'qualified_date': qualifiedDate?.toIso8601String(), // Convert DateTime to String for Firestore
-      'upline_admin': uplineAdmin,
-      // Convert Dart camelCase properties to Firestore snake_case for writing
+      'qualifiedDate': qualifiedDate,
+      'role': role,
+      'isUpgraded': isUpgraded,
+      'bizOpp': bizOpp,
+      'bizVisitDate': bizVisitDate,
+      'upline_refs': uplineRefs,
       'direct_sponsor_count': directSponsorCount,
       'total_team_count': totalTeamCount,
       'downlineIds': downlineIds,
-      'biz_opp_ref_url': bizOppRefUrl, // <--- CORRECTED: Add 'biz_opp_ref_url' to map
-      'biz_opp': bizOpp,
-      'role': role,
-      'biz_visit_date': bizVisitDate?.toIso8601String(),
+      'directSponsorMin': directSponsorMin,
+      'totalTeamMin': totalTeamMin,
     };
-  }
-
-  // copyWith method
-  UserModel copyWith({
-    String? uid,
-    String? email,
-    String? firstName,
-    String? lastName,
-    String? country,
-    String? state,
-    String? city,
-    String? referralCode,
-    String? referredBy,
-    String? photoUrl,
-    DateTime? joined,
-    DateTime? createdAt,
-    int? level,
-    DateTime? qualifiedDate,
-    String? uplineAdmin,
-    int? directSponsorCount,
-    int? totalTeamCount,
-    List<String>? downlineIds,
-    String? bizOppRefUrl,
-    String? bizOpp,
-    String? role,
-    DateTime? bizVisitDate,
-  }) {
-    return UserModel(
-      uid: uid ?? this.uid,
-      email: email ?? this.email,
-      firstName: firstName ?? this.firstName,
-      lastName: lastName ?? this.lastName,
-      country: country ?? this.country,
-      state: state ?? this.state,
-      city: city ?? this.city,
-      referralCode: referralCode ?? this.referralCode,
-      referredBy: referredBy ?? this.referredBy,
-      photoUrl: photoUrl ?? this.photoUrl,
-      joined: joined ?? this.joined,
-      createdAt: createdAt ?? this.createdAt,
-      level: level ?? this.level,
-      qualifiedDate: qualifiedDate ?? this.qualifiedDate,
-      uplineAdmin: uplineAdmin ?? this.uplineAdmin,
-      directSponsorCount: directSponsorCount ?? this.directSponsorCount,
-      totalTeamCount: totalTeamCount ?? this.totalTeamCount,
-      downlineIds: downlineIds ?? this.downlineIds,
-      bizOppRefUrl: bizOppRefUrl ?? this.bizOppRefUrl,
-      bizOpp: bizOpp ?? this.bizOpp,
-      role: role ?? this.role,
-      bizVisitDate: bizVisitDate ?? this.bizVisitDate,
-    );
   }
 }

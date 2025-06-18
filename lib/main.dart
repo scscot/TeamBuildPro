@@ -1,4 +1,3 @@
-// lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
@@ -7,11 +6,12 @@ import 'models/user_model.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/login_screen.dart';
 import 'services/auth_service.dart';
-import 'services/fcm_service.dart'; // Import the new service class
+import 'services/fcm_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
+    // Using your exact, correct initialization logic.
     if (Firebase.apps.isEmpty) {
       await Firebase.initializeApp(
         options: FirebaseOptions(
@@ -27,7 +27,6 @@ void main() async {
   } catch (e) {
     debugPrint("Firebase init error: $e");
   }
-
   runApp(const MyApp());
 }
 
@@ -36,9 +35,20 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamProvider<UserModel?>.value(
-      value: AuthService().onAuthStateChangedAndProfileVerified,
-      initialData: null,
+    // REVISED: Use MultiProvider to provide services cleanly.
+    return MultiProvider(
+      providers: [
+        Provider<AuthService>(create: (_) => AuthService()),
+        StreamProvider<UserModel?>(
+          create: (context) =>
+              context.read<AuthService>().onAuthStateChangedAndProfileVerified,
+          initialData: null,
+          catchError: (_, error) {
+            debugPrint("Error in auth stream: $error");
+            return null;
+          },
+        ),
+      ],
       child: MaterialApp(
         title: 'TeamBuild Pro',
         theme: ThemeData(
@@ -57,10 +67,10 @@ class AuthWrapper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final user = Provider.of<UserModel?>(context);
+    // REVISED: Using context.watch is the modern, correct way to listen to a Provider.
+    final user = context.watch<UserModel?>();
 
     if (user != null) {
-      // If the user is logged in, initialize FCM services.
       FCMService().initialize();
       return DashboardScreen(appId: firebaseConfig['appId']!);
     } else {

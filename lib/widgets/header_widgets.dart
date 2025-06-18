@@ -80,9 +80,9 @@ class AppHeaderWithMenu extends StatelessWidget implements PreferredSizeWidget {
 
               final navigator = Navigator.of(context);
               switch (value) {
-                case 'profile':
+                case 'dashboard':
                   navigator.push(MaterialPageRoute(
-                      builder: (_) => ProfileScreen(appId: appId)));
+                      builder: (_) => DashboardScreen(appId: appId)));
                   break;
                 case 'downline':
                   navigator.push(MaterialPageRoute(
@@ -104,6 +104,10 @@ class AppHeaderWithMenu extends StatelessWidget implements PreferredSizeWidget {
                   navigator.push(MaterialPageRoute(
                       builder: (_) => NotificationsScreen(appId: appId)));
                   break;
+                case 'profile':
+                  navigator.push(MaterialPageRoute(
+                      builder: (_) => ProfileScreen(appId: appId)));
+                  break;
                 case 'settings':
                   navigator.push(MaterialPageRoute(
                       builder: (_) => SettingsScreen(appId: appId)));
@@ -115,8 +119,6 @@ class AppHeaderWithMenu extends StatelessWidget implements PreferredSizeWidget {
                 const PopupMenuItem<String>(
                     value: 'join', child: Text('Join Now!')),
               const PopupMenuItem<String>(
-                  value: 'profile', child: Text('My Profile')),
-              const PopupMenuItem<String>(
                   value: 'downline', child: Text('My Downline')),
               const PopupMenuItem<String>(
                   value: 'share', child: Text('Grow My Team')),
@@ -124,6 +126,8 @@ class AppHeaderWithMenu extends StatelessWidget implements PreferredSizeWidget {
                   value: 'messages', child: Text('Messages Center')),
               const PopupMenuItem<String>(
                   value: 'notifications', child: Text('Notifications')),
+              const PopupMenuItem<String>(
+                  value: 'profile', child: Text('My Profile')),
               if (user.role == 'admin')
                 const PopupMenuItem<String>(
                     value: 'settings', child: Text('Opportunity Settings')),
