@@ -23,7 +23,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final FirestoreService _firestoreService = FirestoreService();
   bool _biometricEnabled = false;
   bool _biometricsAvailable = false;
+
   String? _sponsorName;
+  String? _sponsorUid;
+  String? _teamLeaderName;
+  String? _teamLeaderUid;
 
   @override
   void initState() {
@@ -32,7 +36,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _loadBiometricSetting();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        _loadSponsorName();
+        _loadUplineData();
       }
     });
   }
@@ -44,26 +48,47 @@ class _ProfileScreenState extends State<ProfileScreen> {
           await auth.canCheckBiometrics && await auth.isDeviceSupported();
       if (mounted) setState(() => _biometricsAvailable = available);
     } catch (e) {
-      if (mounted) setState(() => _biometricsAvailable = false);
+      // Handle exception
     }
   }
 
   Future<void> _loadBiometricSetting() async {
-    // This logic would require a local storage solution like shared_preferences.
+    // Logic to load from local storage
   }
 
   Future<void> _toggleBiometric(bool value) async {
-    // This would save the setting to local storage.
+    // Logic to save to local storage
     setState(() => _biometricEnabled = value);
   }
 
-  void _loadSponsorName() {
+  void _loadUplineData() {
     final user = Provider.of<UserModel?>(context, listen: false);
-    if (user?.referredBy != null && user!.referredBy!.isNotEmpty) {
-      _firestoreService.getUser(user.referredBy!).then((sponsor) {
+    if (user == null || user.role == 'admin') {
+      return;
+    }
+
+    // Fetch Sponsor info using the 'sponsor_id' UID
+    if (user.sponsorId != null && user.sponsorId!.isNotEmpty) {
+      _firestoreService.getUser(user.sponsorId!).then((sponsor) {
         if (mounted && sponsor != null) {
           setState(() {
-            _sponsorName = '${sponsor.firstName} ${sponsor.lastName}';
+            _sponsorName =
+                '${sponsor.firstName ?? ''} ${sponsor.lastName ?? ''}'.trim();
+            _sponsorUid = sponsor.uid;
+          });
+        }
+      });
+    }
+
+    // Fetch Team Leader info using the last UID in 'upline_refs'
+    if (user.uplineRefs.isNotEmpty) {
+      final leaderId = user.uplineRefs.last;
+      _firestoreService.getUser(leaderId).then((leader) {
+        if (mounted && leader != null) {
+          setState(() {
+            _teamLeaderName =
+                '${leader.firstName ?? ''} ${leader.lastName ?? ''}'.trim();
+            _teamLeaderUid = leader.uid;
           });
         }
       });
@@ -114,13 +139,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             const SizedBox(height: 24),
             const Divider(),
-            _buildInfoRow('Referral Code', currentUser.referralCode ?? 'N/A'),
-            if (_sponsorName != null)
-              _buildClickableInfoRow(
-                  'Sponsor', _sponsorName!, currentUser.referredBy ?? ''),
+            _buildInfoRow('City', currentUser.city ?? 'N/A'),
+            _buildInfoRow('State', currentUser.state ?? 'N/A'),
+            _buildInfoRow('Country', currentUser.country ?? 'N/A'),
             if (currentUser.createdAt != null)
               _buildInfoRow(
                   'Joined', DateFormat.yMMMd().format(currentUser.createdAt!)),
+            if (currentUser.role != 'admin') ...[
+              // MODIFIED: Reinstated the "Your Sponsor" row
+              if (_sponsorName != null && _sponsorUid != null)
+                _buildClickableInfoRow(
+                    'Your Sponsor', _sponsorName!, _sponsorUid!),
+
+              if (_teamLeaderName != null &&
+                  _teamLeaderUid != null &&
+                  _teamLeaderUid != _sponsorUid)
+                _buildClickableInfoRow(
+                    'Team Leader', _teamLeaderName!, _teamLeaderUid!),
+            ],
             const SizedBox(height: 20),
             Center(
               child: ElevatedButton(
@@ -146,7 +182,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 value: _biometricEnabled,
                 onChanged: _toggleBiometric,
               ),
-            // MODIFIED: Removed the Change Password ListTile
             const Divider(height: 40),
             Center(
               child: ElevatedButton(

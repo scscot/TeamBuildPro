@@ -28,13 +28,10 @@ class MemberDetailScreen extends StatefulWidget {
 class _MemberDetailScreenState extends State<MemberDetailScreen> {
   final FirestoreService _firestoreService = FirestoreService();
   UserModel? _user;
-  // MODIFIED: Removed unused _currentUser field. Data is accessed via Provider.
-  // UserModel? _currentUser;
   String? _sponsorName;
   String? _teamLeaderName;
   String? _teamLeaderUid;
-  String?
-      _currentUserId; // Proactive: Added to store the current user's ID safely.
+  String? _currentUserId;
   bool _isLoading = true;
 
   @override
@@ -58,7 +55,6 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
     _currentUserId = authUser.uid;
 
     try {
-      // MODIFIED: Removed fetching of currentUserDoc as it's unused.
       final userDoc = await _firestoreService.getUser(widget.userId);
 
       if (!mounted) return;
@@ -95,10 +91,8 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
   }
 
   void _handleSendMessage() {
-    // MODIFIED: This guard clause now safely checks the state variables.
     if (_currentUserId == null || _user == null) return;
 
-    // MODIFIED: No '!' assertions are needed because of the guard clause above.
     final ids = [_currentUserId!, _user!.uid];
     ids.sort();
     final threadId = ids.join('_');
@@ -115,8 +109,6 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
       ),
     );
   }
-
-  // MODIFIED: Removed the unsafe getter for _currentUserId.
 
   @override
   Widget build(BuildContext context) {
@@ -159,12 +151,15 @@ class _MemberDetailScreenState extends State<MemberDetailScreen> {
                         _buildInfoRow('Email', _user!.email ?? 'N/A'),
                         _buildInfoRow('UID', _user!.uid),
                       ],
+                      // MODIFIED: Added City, State, Country, and Sponsor rows
+                      _buildInfoRow('City', _user!.city ?? 'N/A'),
+                      _buildInfoRow('State', _user!.state ?? 'N/A'),
+                      _buildInfoRow('Country', _user!.country ?? 'N/A'),
                       if (_user!.createdAt != null)
                         _buildInfoRow('Joined',
                             DateFormat.yMMMd().format(_user!.createdAt!)),
                       if (_sponsorName != null)
-                        _buildClickableInfoRow(
-                            'Sponsor', _sponsorName!, _user!.referredBy!),
+                        _buildInfoRow('Sponsor', _sponsorName!),
                       if (_teamLeaderName != null &&
                           _teamLeaderUid != null &&
                           _user!.referredBy != _teamLeaderUid)

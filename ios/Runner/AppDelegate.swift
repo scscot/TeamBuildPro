@@ -1,7 +1,9 @@
-import Firebase
-import Flutter
+// lib/ios/Runner/AppDelegate.swift
+
 import UIKit
-import UserNotifications
+import Flutter
+import FirebaseCore
+import FirebaseMessaging
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, MessagingDelegate {
@@ -9,6 +11,10 @@ import UserNotifications
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    // MODIFIED: Add this line to explicitly initialize Firebase FIRST.
+    // This is the standard and required way when using native Firebase plugins.
+    FirebaseApp.configure()
+    
     GeneratedPluginRegistrant.register(with: self)
 
     UNUserNotificationCenter.current().delegate = self
