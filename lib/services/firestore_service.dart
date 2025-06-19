@@ -1,3 +1,5 @@
+// lib/services/firestore_service.dart
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../models/user_model.dart';
@@ -18,8 +20,17 @@ class FirestoreService {
     return null;
   }
 
+  // MODIFIED: This is the definitive, robust implementation.
   Future<void> updateUser(String uid, Map<String, dynamic> data) async {
-    await _db.collection('users').doc(uid).update(data);
+    try {
+      debugPrint("FirestoreService: Updating user $uid with data: $data");
+      await _db.collection('users').doc(uid).set(data, SetOptions(merge: true));
+      debugPrint("FirestoreService: Update for $uid successful.");
+    } catch (e) {
+      debugPrint("FirestoreService: Error updating user $uid: $e");
+      // Re-throw the exception so the UI can catch it.
+      rethrow;
+    }
   }
 
   Future<void> sendMessage({
