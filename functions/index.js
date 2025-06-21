@@ -161,14 +161,17 @@ exports.getDownline = onCall({ region: "us-central1" }, async (request) => {
 
 
 /**
- * Calculates and returns various counts for the user's downline.
- * Uses the `upline_refs` field for efficient querying.
+ * THE FIX: This is the complete and correct version of the function.
+ * It now includes proper error handling and logging.
+ * This function REQUIRES the composite indexes defined in Step 2 to work.
  */
 exports.getDownlineCounts = onCall({ region: "us-central1" }, async (request) => {
   if (!request.auth) {
+    console.error("Authentication check failed. No user is authenticated.");
     throw new HttpsError("unauthenticated", "The function must be called while authenticated.");
   }
   const currentUserId = request.auth.uid;
+  console.log(`Fetching downline counts for user: ${currentUserId}`);
 
   try {
     const now = new Date();
@@ -179,7 +182,8 @@ exports.getDownlineCounts = onCall({ region: "us-central1" }, async (request) =>
     // Base query for the user's downline
     const teamQuery = db.collection("users").where("upline_refs", "array-contains", currentUserId);
 
-    // Perform all count queries in parallel
+    // Perform all count queries in parallel.
+    // These queries will fail without the correct composite indexes.
     const [
       allSnapshot,
       last24Snapshot,
@@ -191,7 +195,7 @@ exports.getDownlineCounts = onCall({ region: "us-central1" }, async (request) =>
       teamQuery.where("createdAt", ">=", twentyFourHoursAgo).count().get(),
       teamQuery.where("createdAt", ">=", sevenDaysAgo).count().get(),
       teamQuery.where("createdAt", ">=", thirtyDaysAgo).count().get(),
-      teamQuery.where("isQualified", "==", true).count().get()
+      teamQuery.where("qualifiedDate", "!=", null).count().get()
     ]);
 
     const counts = {
@@ -202,13 +206,20 @@ exports.getDownlineCounts = onCall({ region: "us-central1" }, async (request) =>
       newQualified: newQualifiedSnapshot.data().count,
     };
 
+    // Log the successful result before sending it.
+    console.log(`Successfully calculated counts for ${currentUserId}:`, counts);
     return { counts };
 
   } catch (error) {
-    console.error("Error in getDownlineCounts function:", error);
-    throw new HttpsError("internal", "An unexpected error occurred while fetching downline counts.");
+    // Log the detailed error to Firebase Functions logs for debugging.
+    console.error(`CRITICAL ERROR in getDownlineCounts for user ${currentUserId}:`, error);
+    // Re-throw the error so the client knows the operation failed.
+    throw new HttpsError("internal", `An unexpected error occurred while fetching downline counts. Details: ${error.message}`);
   }
 });
+
+
+// --- Other functions (unchanged) ---
 
 exports.checkAdminSubscriptionStatus = onCall(async (request) => {
   const db = getFirestore();
@@ -289,8 +300,7 @@ exports.onNewChatMessage = onDocumentCreated("messages/{threadId}/chat/{messageI
     const notificationContent = {
       title: `💬 You have a new message!`,
       message: `From: ${senderName}`,
-      createdAt: FieldValue.serverTimestamp(),
-      read: false,
+      createdAt: FieldValue.serverTimestamp(), read: false,
     };
     await db.collection("users").doc(recipients[0]).collection("notifications").add(notificationContent);
   } catch (error) {
@@ -304,12 +314,18 @@ exports.notifyOnQualification = onDocumentUpdated("users/{userId}", async (event
   const afterData = event.data?.after.data();
   if (!beforeData || !afterData) return;
   const userId = event.params.userId;
-  const DIRECT_SPONSOR_MIN = 5;
+  const DIRECT_SPONSOR_MIN = 4;
   const TOTAL_TEAM_MIN = 20;
-  const wasQualified = (beforeData.directSponsorCount >= DIRECT_SPONSOR_MIN) && (beforeData.totalTeamCount >= TOTAL_TEAM_MIN);
+
+  const wasQualified = !!beforeData.qualifiedDate;
   const isNowQualified = (afterData.directSponsorCount >= DIRECT_SPONSOR_MIN) && (afterData.totalTeamCount >= TOTAL_TEAM_MIN);
+
   if (!wasQualified && isNowQualified) {
     try {
+      await event.data.after.ref.update({
+        qualifiedDate: FieldValue.serverTimestamp(),
+      });
+
       let bizName = "the business opportunity";
       if (afterData.uplineAdmin) {
         const adminSettingsDoc = await db.collection("admin_settings").doc(afterData.uplineAdmin).get();

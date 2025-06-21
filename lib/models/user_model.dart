@@ -14,7 +14,7 @@ class UserModel {
   final DateTime? createdAt;
   final DateTime? joined;
   final int level;
-  final DateTime? qualifiedDate;
+  final DateTime? qualifiedDate; // Keep as camelCase
   final List<String> uplineRefs;
   final int directSponsorCount;
   final int totalTeamCount;
@@ -77,10 +77,12 @@ class UserModel {
       createdAt: parseDate(map['createdAt'] ?? map['joined']),
       joined: parseDate(map['createdAt'] ?? map['joined']),
       level: (map['level'] as num?)?.toInt() ?? 1,
-      qualifiedDate: parseDate(map['qualified_date']),
+      // THE FIX: Changed 'qualified_date' to 'qualifiedDate'
+      qualifiedDate: parseDate(map['qualifiedDate']),
       uplineRefs: List<String>.from(map['upline_refs'] ?? []),
-      directSponsorCount: (map['direct_sponsor_count'] as num?)?.toInt() ?? 0,
-      totalTeamCount: (map['total_team_count'] as num?)?.toInt() ?? 0,
+      // THE FIX: Changed 'direct_sponsor_count' and 'total_team_count' to camelCase
+      directSponsorCount: (map['directSponsorCount'] as num?)?.toInt() ?? 0,
+      totalTeamCount: (map['totalTeamCount'] as num?)?.toInt() ?? 0,
       bizOppRefUrl: map['biz_opp_ref_url'],
       bizOpp: map['biz_opp'],
       role: map['role'],
@@ -103,11 +105,11 @@ class UserModel {
       'createdAt': createdAt != null ? Timestamp.fromDate(createdAt!) : null,
       'joined': joined != null ? Timestamp.fromDate(joined!) : null,
       'level': level,
-      'qualified_date': qualifiedDate,
-      'sponsor_id': sponsorId, // MODIFIED
+      'qualifiedDate': qualifiedDate,
+      'sponsor_id': sponsorId,
       'upline_refs': uplineRefs,
-      'direct_sponsor_count': directSponsorCount,
-      'total_team_count': totalTeamCount,
+      'directSponsorCount': directSponsorCount,
+      'totalTeamCount': totalTeamCount,
       'biz_opp_ref_url': bizOppRefUrl,
       'biz_opp': bizOpp,
       'role': role,
