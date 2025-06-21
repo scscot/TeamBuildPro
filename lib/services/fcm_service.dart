@@ -1,17 +1,18 @@
 // lib/services/fcm_service.dart
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
-// MODIFIED: Replaced private implementation import with the correct public library.
 import 'package:flutter/widgets.dart';
 
 class FCMService {
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
+  String? _lastSavedToken;
+
   Future<void> initialize(BuildContext context) async {
-    // No 'await' before using context, so this is safe.
     NotificationSettings settings = await _messaging.requestPermission(
       alert: true,
       badge: true,
@@ -19,38 +20,42 @@ class FCMService {
     );
 
     if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-      // Get the token and save it to the database for the current user
-      await _saveToken();
+      final token = await _messaging.getToken();
+      await _conditionallySaveToken(token);
 
-      // Listen for token refreshes
-      _messaging.onTokenRefresh.listen((_) => _saveToken());
+      // Prevent runaway loop by only saving NEW tokens.
+      _messaging.onTokenRefresh.listen((newToken) async {
+        await _conditionallySaveToken(newToken);
+      });
     } else {
-      // MODIFIED: Replaced print with debugPrint for safer logging.
       if (kDebugMode) {
-        debugPrint('User denied notification permissions.');
+        debugPrint('❌ User denied notification permissions.');
       }
     }
   }
 
-  Future<void> _saveToken() async {
+  Future<void> _conditionallySaveToken(String? token) async {
     final user = FirebaseAuth.instance.currentUser;
-    final token = await _messaging.getToken();
+    if (user == null || token == null) return;
 
-    if (user != null && token != null) {
-      try {
-        await _firestore
-            .collection('users')
-            .doc(user.uid)
-            .update({'fcm_token': token});
-        if (kDebugMode) {
-          // MODIFIED: Replaced print with debugPrint.
-          debugPrint('✅ FCM token saved/updated for user: ${user.uid}');
-        }
-      } catch (e) {
-        if (kDebugMode) {
-          // MODIFIED: Replaced print with debugPrint.
-          debugPrint('❌ Error saving FCM token: $e');
-        }
+    try {
+      final docRef = _firestore.collection('users').doc(user.uid);
+      final doc = await docRef.get();
+
+      final storedToken = doc.data()?['fcm_token'];
+
+      // Skip update if token hasn't changed
+      if (storedToken == token || _lastSavedToken == token) return;
+
+      await docRef.update({'fcm_token': token});
+      _lastSavedToken = token;
+
+      if (kDebugMode) {
+        debugPrint('✅ FCM token saved/updated for user: ${user.uid}');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ Error saving FCM token: $e');
       }
     }
   }

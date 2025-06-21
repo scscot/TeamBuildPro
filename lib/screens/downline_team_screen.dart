@@ -10,9 +10,6 @@ import '../services/downline_service.dart';
 import '../screens/member_detail_screen.dart';
 import '../widgets/header_widgets.dart';
 
-// MODIFIED: Removed unnecessary import of 'package:flutter/foundation.dart'.
-// 'debugPrint' is available via 'material.dart'.
-
 enum DownlineFilter {
   all('All Members'),
   last24('Last 24 Hours'),
@@ -53,7 +50,7 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
   final Map<DownlineFilter, int> _filterCounts = {
     for (var filter in DownlineFilter.values) filter: 0
   };
-  final Map<int, bool> _expansionPanelState = {};
+  final Set<int> _expandedPanels = {}; // UPDATED
 
   @override
   void initState() {
@@ -138,8 +135,6 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
     final now = DateTime.now();
 
     _filteredDownline = _fullDownline.where((user) {
-      // MODIFIED: Removed the unreachable 'default' clause.
-      // Since DownlineFilter is an enum and all cases are handled, a default is not needed.
       switch (_selectedFilter) {
         case DownlineFilter.last24:
           return user.createdAt != null &&
@@ -169,14 +164,11 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
     final Map<int, List<UserModel>> grouped = {};
     for (var user in _filteredDownline) {
       final displayLevel = user.level - _levelOffset;
-      if (displayLevel > 0) {
+      if (_selectedFilter == DownlineFilter.newQualified) {
+        grouped.putIfAbsent(displayLevel, () => []).add(user);
+      } else if (displayLevel > 0) {
         grouped.putIfAbsent(displayLevel, () => []).add(user);
       }
-    }
-
-    // MODIFIED: Replaced .forEach with a for...in loop to adhere to linter rules.
-    for (var level in grouped.keys) {
-      _expansionPanelState.putIfAbsent(level, () => false);
     }
 
     setState(() {
@@ -229,34 +221,32 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
   }
 
   Widget _buildFilterChips() {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
+    return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-      child: Row(
+      child: Wrap(
+        spacing: 8.0,
+        runSpacing: 8.0,
         children: DownlineFilter.values.map((filter) {
           final isSelected = _selectedFilter == filter;
           final count = _filterCounts[filter] ?? 0;
-          return Padding(
-            padding: const EdgeInsets.only(right: 8.0),
-            child: ChoiceChip(
-              label: Text('${filter.displayTitle} ($count)'),
-              selected: isSelected,
-              onSelected: (selected) {
-                if (selected) {
-                  setState(() {
-                    _selectedFilter = filter;
-                    _processAndFilterData();
-                  });
-                }
-              },
-              selectedColor: Colors.indigo.shade100,
-              labelStyle: TextStyle(
-                color: isSelected ? Colors.indigo.shade900 : Colors.black87,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              ),
-              side: BorderSide(
-                color: isSelected ? Colors.indigo : Colors.grey.shade400,
-              ),
+          return ChoiceChip(
+            label: Text('${filter.displayTitle} ($count)'),
+            selected: isSelected,
+            onSelected: (selected) {
+              if (selected) {
+                setState(() {
+                  _selectedFilter = filter;
+                  _processAndFilterData();
+                });
+              }
+            },
+            selectedColor: Colors.indigo.shade100,
+            labelStyle: TextStyle(
+              color: isSelected ? Colors.indigo.shade900 : Colors.black87,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            ),
+            side: BorderSide(
+              color: isSelected ? Colors.indigo : Colors.grey.shade400,
             ),
           );
         }).toList(),
@@ -287,14 +277,18 @@ class _DownlineTeamScreenState extends State<DownlineTeamScreen> {
         expansionCallback: (panelIndex, isExpanded) {
           final level = _downlineByLevel.keys.elementAt(panelIndex);
           setState(() {
-            _expansionPanelState[level] = !isExpanded;
+            if (_expandedPanels.contains(level)) {
+              _expandedPanels.remove(level);
+            } else {
+              _expandedPanels.add(level);
+            }
           });
         },
         children: _downlineByLevel.entries.map((entry) {
           final level = entry.key;
           final users = entry.value;
           return ExpansionPanel(
-            isExpanded: _expansionPanelState[level] ?? false,
+            isExpanded: _expandedPanels.contains(level),
             headerBuilder: (context, isExpanded) {
               return ListTile(
                 title: Text(
